@@ -3,6 +3,17 @@ local cam = nil
 local charPeds = {} -- Ahora es una tabla para guardar todos los Peds
 local activePedCoords = {}
 
+-- Generador de géneros aleatorios por sesión para las sombras (0 = Hombre, 1 = Mujer)
+local randomSlotGenders = {}
+CreateThread(function()
+    Wait(200) -- Pequeño margen para asegurar entropía en la semilla
+    math.randomseed(GetGameTimer())
+    for i = 1, 10 do
+        -- Usamos tostring() para obligar al JS a leerlo como Objeto exacto
+        randomSlotGenders[tostring(i)] = math.random(0, 1)
+    end
+end)
+
 -- ==========================================
 -- 🛠️ FUNCIÓN DE DEPURACIÓN (DEBUG)
 -- ==========================================
@@ -10,6 +21,27 @@ local activePedCoords = {}
 local function DebugPrint(msg)
     if Config.Debug then
         print("^5[DP-MultiCharacter Debug] ^7" .. msg)
+    end
+end
+
+-- ==========================================
+-- 🧍‍♂️ FUNCIÓN PARA DESNUDAR PEDS
+-- ==========================================
+local function SetPedNaked(ped, model)
+    if model == joaat('mp_m_freemode_01') then
+        -- Hombre desnudo (Boxers)
+        SetPedComponentVariation(ped, 3, 15, 0, 0) -- Brazos (Desnudos)
+        SetPedComponentVariation(ped, 4, 14, 0, 0) -- Pantalones (Boxers)
+        SetPedComponentVariation(ped, 6, 34, 0, 0) -- Pies (Descalzo)
+        SetPedComponentVariation(ped, 8, 15, 0, 0) -- Accesorio (Nada)
+        SetPedComponentVariation(ped, 11, 15, 0, 0) -- Torso (Pecho descubierto)
+    elseif model == joaat('mp_f_freemode_01') then
+        -- Mujer desnuda (Ropa interior)
+        SetPedComponentVariation(ped, 3, 15, 0, 0) -- Brazos (Desnudos)
+        SetPedComponentVariation(ped, 4, 15, 0, 0) -- Pantalones (Bragas)
+        SetPedComponentVariation(ped, 6, 35, 0, 0) -- Pies (Descalza)
+        SetPedComponentVariation(ped, 8, 15, 0, 0) -- Accesorio (Nada)
+        SetPedComponentVariation(ped, 11, 15, 0, 0) -- Torso (Sujetador)
     end
 end
 
@@ -26,7 +58,10 @@ function ToggleUI(state)
         state = state,
         debug = Config.Debug,
         translations = GetTranslations(),
-        nationalities = Config.Nationalities
+        nationalities = Config.Nationalities,
+        minAge = Config.MinAge or 18, -- 18 por seguridad si falta
+        maxAge = Config.MaxAge or 100, -- 100 por seguridad si falta
+        randomGenders = randomSlotGenders
     })
 
     if state then
@@ -126,7 +161,7 @@ function UpdatePedGender(slot, gender)
     SetEntityInvincible(ped, true)
     SetBlockingOfNonTemporaryEvents(ped, true)
     SetEntityAlpha(ped, 150, false)
-    SetPedDefaultComponentVariation(ped)
+    SetPedNaked(ped, model) -- Le ponemos la ropa interior en lugar de la ropa por defecto
 
     charPeds[slot].entity = ped
 end
@@ -239,7 +274,8 @@ function SpawnAllPeds(characters, maxSlots)
         else
             -- Slot vacío: Cargar la "Sombra"
             DebugPrint("Slot " .. tostring(slot) .. " vacío. Spawneando ped sombra.")
-            SpawnSinglePed(slot, 0, nil, nil, coords, true)
+            local randomGender = randomSlotGenders[tostring(slot)] or 0
+            SpawnSinglePed(slot, randomGender, nil, nil, coords, true)
         end
     end
 end
@@ -286,10 +322,12 @@ function SpawnSinglePed(slot, gender, customModel, skinData, coords, isShadow)
 
     if isShadow then
         SetEntityAlpha(ped, 150, false)
-        SetPedDefaultComponentVariation(ped)
+        SetPedNaked(ped, model) -- Ropa interior para las sombras
     elseif skinData then
         local decodedSkin = type(skinData) == "string" and json.decode(skinData) or skinData
         TriggerEvent('qb-clothing:client:loadPlayerClothing', decodedSkin, ped)
+    else
+        SetPedNaked(ped, model) -- Ropa interior por seguridad si un ped real no tiene ropa guardada
     end
 
     -- Ahora guardamos un objeto (tabla) para saber si era una sombra y recuperar su estado luego

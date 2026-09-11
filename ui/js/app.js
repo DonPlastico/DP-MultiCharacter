@@ -12,6 +12,10 @@ let translations = {}; // Variable global para almacenar las traducciones cargad
 let selectedNationality = null;
 let nationalitiesData = [];
 let lastCharacter = null;
+let minAge = 18; // Comodín inicial de seguridad (Se machaca con el Config al abrir)
+let maxAge = 100; // Comodín inicial de seguridad (Se machaca con el Config al abrir)
+let flatpickrInstance = null; // Referencia global a la instancia del datepicker para poder recalcularla si cambian minAge/maxAge
+let randomSlotGenders = {}; // Variable para guardar los géneros
 
 // ==========================================
 // 🛠️ FUNCIÓN DE DEPURACIÓN (DEBUG)
@@ -58,8 +62,303 @@ function setFooterZoomState(zoomed) {
     DebugPrint("Estado del footer actualizado. Zoomed: " + zoomed);
 }
 
+// ==========================================
+// 📅 FUNCIONES GLOBALES DEL CALENDARIO CUSTOM
+// ==========================================
+function getAgeYearRange() {
+    const currentYear = new Date().getFullYear();
+    const newestYear = currentYear - minAge; // Año más reciente permitido (el más "joven")
+    const oldestYear = currentYear - maxAge; // Año más antiguo permitido (el más "mayor")
+    return { newestYear, oldestYear };
+}
+
+function applyAgeLimitsToFlatpickr(instance) {
+    const { newestYear, oldestYear } = getAgeYearRange();
+
+    // SOLUCIÓN ZONA HORARIA: Usar new Date(año, mes, día) evita que el límite del 31 de Dic
+    // se mueva al 30 de Dic por culpa del uso horario local del jugador.
+    instance.set('minDate', new Date(oldestYear, 0, 1));
+    instance.set('maxDate', new Date(newestYear, 11, 31));
+
+    // EL TRUCO DEFINITIVO: Sobreescribimos el "hoy" interno de Flatpickr
+    instance.now = new Date(newestYear, 0, 1, 12, 0, 0);
+
+    DebugPrint(`Límites del datepicker recalculados. Años permitidos: ${oldestYear} - ${newestYear}`);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     DebugPrint("DOM cargado. Inicializando eventos principales de la interfaz.");
+
+    const MONTH_NAMES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+    // Construye el panel de selección de MES (grid 3x4) dentro del stack de días
+    function buildMonthPicker(instance, stack) {
+        const panel = document.createElement('div');
+        panel.className = 'fp-month-picker';
+
+        // SOLUCIÓN BUG DEL SCROLL: Bloqueamos que la rueda del ratón cambie los meses de Flatpickr
+        panel.addEventListener('wheel', (e) => e.stopPropagation());
+
+        // Título dinámico
+        const title = document.createElement('div');
+        title.className = 'fp-panel-title';
+        title.innerText = 'Selecciona el Mes';
+        panel.appendChild(title);
+
+        const grid = document.createElement('div');
+        grid.className = 'fp-picker-grid';
+
+        MONTH_NAMES_ES.forEach((name, index) => {
+            const btn = document.createElement('div');
+            btn.className = 'fp-month-btn';
+            btn.innerText = name;
+            btn.dataset.month = index;
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // SOLUCIÓN BUG DEL MES EXACTO: Solo le pasamos el "index" y false.
+                instance.changeMonth(index, false);
+                closePickerPanels(panel, yearPanelRef, instance);
+                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+            });
+            grid.appendChild(btn);
+        });
+
+        const closeBtn = document.createElement('div');
+        closeBtn.className = 'fp-close-picker';
+        closeBtn.innerHTML = '<span class="material-symbols-outlined">keyboard_arrow_up</span>';
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closePickerPanels(panel, yearPanelRef, instance);
+        });
+
+        panel.appendChild(grid);
+        panel.appendChild(closeBtn);
+        stack.appendChild(panel);
+        return panel;
+    }
+
+    // Construye el panel de selección de AÑO (lista en scroll) dentro del stack de días
+    function buildYearPicker(instance, stack) {
+        const panel = document.createElement('div');
+        panel.className = 'fp-year-picker';
+
+        // SOLUCIÓN BUG DEL SCROLL: Bloqueamos que la rueda del ratón cambie los meses por detrás
+        panel.addEventListener('wheel', (e) => e.stopPropagation());
+
+        // Título dinámico
+        const title = document.createElement('div');
+        title.className = 'fp-panel-title';
+        title.innerText = 'Selecciona el Año';
+        panel.appendChild(title);
+
+        const list = document.createElement('div');
+        list.className = 'fp-picker-list';
+        panel.appendChild(list);
+
+        const closeBtn = document.createElement('div');
+        closeBtn.className = 'fp-close-picker';
+        closeBtn.innerHTML = '<span class="material-symbols-outlined">keyboard_arrow_up</span>';
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closePickerPanels(monthPanelRef, panel, instance);
+        });
+        panel.appendChild(closeBtn);
+
+        stack.appendChild(panel);
+        return panel;
+    }
+
+    // Rellena (o refresca) la lista de años
+    function populateYearPicker(instance, yearPanel) {
+        const list = yearPanel.querySelector('.fp-picker-list');
+        list.innerHTML = '';
+
+        const { newestYear, oldestYear } = getAgeYearRange();
+
+        for (let year = newestYear; year >= oldestYear; year--) {
+            const btn = document.createElement('div');
+            btn.className = 'fp-year-btn';
+            btn.innerText = year;
+            btn.dataset.year = year;
+            if (year === instance.currentYear) btn.classList.add('selected');
+
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                instance.changeYear(year);
+                closePickerPanels(monthPanelRef, yearPanel, instance); // <--- Pasamos instance
+                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+            });
+
+            list.appendChild(btn);
+        }
+    }
+
+    // Cierra ambos paneles y vuelve a MOSTRAR la grid de días
+    function closePickerPanels(monthPanel, yearPanel, instance) {
+        if (monthPanel) monthPanel.classList.remove('visible');
+        if (yearPanel) yearPanel.classList.remove('visible');
+        if (instance && instance.calendarContainer) {
+            instance.calendarContainer.classList.remove('fp-panel-open'); // <--- Muestra los días
+        }
+    }
+
+    function syncPickerSelection(instance, monthPanel, yearPanel) {
+        monthPanel.querySelectorAll('.fp-month-btn').forEach(btn => {
+            btn.classList.toggle('selected', parseInt(btn.dataset.month) === instance.currentMonth);
+        });
+        yearPanel.querySelectorAll('.fp-year-btn').forEach(btn => {
+            btn.classList.toggle('selected', parseInt(btn.dataset.year) === instance.currentYear);
+        });
+    }
+
+    let monthPanelRef = null;
+    let yearPanelRef = null;
+
+    // --- INICIALIZAR FLATPICKR (CALENDARIO CUSTOM) ---
+    flatpickrInstance = flatpickr("#reg-dob", {
+        dateFormat: "Y-m-d",
+        disableMobile: true,
+        locale: "es",
+        static: true,
+        onOpen: function (selectedDates, dateStr, instance) {
+            if (selectedDates.length === 0) {
+                const { newestYear } = getAgeYearRange();
+                instance.jumpToDate(new Date(newestYear, 0, 1));
+                if (instance.currentYearElement) instance.currentYearElement.value = newestYear;
+                const monthDisplay = instance.calendarContainer.querySelector('.fp-custom-month-display');
+                if (monthDisplay) monthDisplay.innerText = MONTH_NAMES_ES[0];
+                if (yearPanelRef && monthPanelRef) {
+                    populateYearPicker(instance, yearPanelRef);
+                    syncPickerSelection(instance, monthPanelRef, yearPanelRef);
+                }
+            }
+        },
+        onClose: function (selectedDates, dateStr, instance) {
+            closePickerPanels(monthPanelRef, yearPanelRef, instance);
+        },
+        onReady: function (selectedDates, dateStr, instance) {
+            const header = instance.monthNav;
+            const yearInputWrapper = instance.currentYearElement.parentNode;
+            const prevMonthBtn = instance.prevMonthNav;
+            const nextMonthBtn = instance.nextMonthNav;
+
+            const parentGroup = instance.element.closest('.input-group');
+            if (parentGroup) {
+                parentGroup.style.position = 'relative';
+            }
+
+            applyAgeLimitsToFlatpickr(instance);
+            header.innerHTML = '';
+
+            // --- FILA 1: SELECTOR DE AÑO ---
+            const yearRow = document.createElement('div');
+            yearRow.className = 'fp-custom-row fp-custom-year';
+
+            const btnPrevYear = document.createElement('div');
+            btnPrevYear.className = 'fp-custom-btn';
+            btnPrevYear.innerHTML = '<i class="fas fa-angle-double-left"></i>';
+            btnPrevYear.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (btnPrevYear.classList.contains('disabled')) return; // Bloquea el click si está deshabilitado
+                instance.changeYear(instance.currentYear - 1);
+            });
+
+            const btnNextYear = document.createElement('div');
+            btnNextYear.className = 'fp-custom-btn';
+            btnNextYear.innerHTML = '<i class="fas fa-angle-double-right"></i>';
+            btnNextYear.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (btnNextYear.classList.contains('disabled')) return; // Bloquea el click si está deshabilitado
+                instance.changeYear(instance.currentYear + 1);
+            });
+
+            yearRow.appendChild(btnPrevYear);
+            yearRow.appendChild(yearInputWrapper);
+            yearRow.appendChild(btnNextYear);
+            yearInputWrapper.querySelectorAll('.arrowUp, .arrowDown').forEach(el => el.style.display = 'none');
+
+            // --- FUNCIÓN PARA BLOQUEAR FLECHAS DE AÑO ---
+            instance.updateYearButtons = function () {
+                const { newestYear, oldestYear } = getAgeYearRange();
+                // Alterna la clase 'disabled' basándose en los límites
+                btnPrevYear.classList.toggle('disabled', instance.currentYear <= oldestYear);
+                btnNextYear.classList.toggle('disabled', instance.currentYear >= newestYear);
+            };
+
+            // Ejecutamos la comprobación por primera vez
+            instance.updateYearButtons();
+
+            // --- FILA 2: SELECTOR DE MES ---
+            const monthRow = document.createElement('div');
+            monthRow.className = 'fp-custom-row fp-custom-month';
+
+            prevMonthBtn.innerHTML = '<i class="fas fa-angle-left"></i>';
+            prevMonthBtn.className = 'fp-custom-btn';
+
+            nextMonthBtn.innerHTML = '<i class="fas fa-angle-right"></i>';
+            nextMonthBtn.className = 'fp-custom-btn';
+
+            const monthDisplay = document.createElement('div');
+            monthDisplay.className = 'fp-custom-month-display';
+            monthDisplay.innerText = MONTH_NAMES_ES[instance.currentMonth];
+
+            monthRow.appendChild(prevMonthBtn);
+            monthRow.appendChild(monthDisplay);
+            monthRow.appendChild(nextMonthBtn);
+
+            header.appendChild(yearRow);
+            header.appendChild(monthRow);
+
+            // --- ENVOLVER GRID DE DÍAS Y CREAR PANELES ---
+            const daysContainer = instance.daysContainer;
+            const stack = document.createElement('div');
+            stack.className = 'fp-days-stack';
+            daysContainer.parentNode.insertBefore(stack, daysContainer);
+            stack.appendChild(daysContainer);
+
+            monthPanelRef = buildMonthPicker(instance, stack);
+            yearPanelRef = buildYearPicker(instance, stack);
+            populateYearPicker(instance, yearPanelRef);
+            syncPickerSelection(instance, monthPanelRef, yearPanelRef);
+
+            // --- EVENTOS CLICK: OCULTAN LOS DÍAS AL ABRIR ---
+            monthDisplay.addEventListener('click', (e) => {
+                e.stopPropagation();
+                closePickerPanels(null, yearPanelRef, instance);
+                syncPickerSelection(instance, monthPanelRef, yearPanelRef);
+                monthPanelRef.classList.add('visible');
+                instance.calendarContainer.classList.add('fp-panel-open');
+                if (typeof Sounds !== 'undefined') Sounds.playNav();
+            });
+
+            yearInputWrapper.querySelector('.numInput.cur-year').addEventListener('click', (e) => {
+                e.stopPropagation();
+                closePickerPanels(monthPanelRef, null, instance);
+                populateYearPicker(instance, yearPanelRef);
+                yearPanelRef.classList.add('visible');
+                instance.calendarContainer.classList.add('fp-panel-open');
+                if (typeof Sounds !== 'undefined') Sounds.playNav();
+            });
+        },
+        onMonthChange: function (selectedDates, dateStr, instance) {
+            const display = instance.calendarContainer.querySelector('.fp-custom-month-display');
+            if (display) display.innerText = MONTH_NAMES_ES[instance.currentMonth];
+            if (monthPanelRef && yearPanelRef) syncPickerSelection(instance, monthPanelRef, yearPanelRef);
+            if (instance.updateYearButtons) instance.updateYearButtons(); // Re-comprobar bloqueos
+        },
+        onYearChange: function (selectedDates, dateStr, instance) {
+            const display = instance.calendarContainer.querySelector('.fp-custom-month-display');
+            if (display) display.innerText = MONTH_NAMES_ES[instance.currentMonth];
+            if (monthPanelRef && yearPanelRef) {
+                populateYearPicker(instance, yearPanelRef);
+                syncPickerSelection(instance, monthPanelRef, yearPanelRef);
+            }
+            if (instance.updateYearButtons) instance.updateYearButtons(); // Re-comprobar bloqueos
+        },
+        onChange: function () {
+            if (typeof Sounds !== 'undefined') Sounds.playSelect();
+        }
+    });
 
     // Función para desincronizar los destellos de las tarjetas del menú para un efecto visual dinámico
     function randomizeCardShines() {
@@ -105,6 +404,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.nationalities) {
                 nationalitiesData = data.nationalities;
                 renderNationalities(nationalitiesData);
+            }
+
+            // Guardar la edad mínima/máxima configurada en Lua (Config.MinAge / Config.MaxAge)
+            // y recalcular los límites del datepicker de fecha de nacimiento en consecuencia.
+            if (data.minAge !== undefined) minAge = data.minAge;
+            if (data.maxAge !== undefined) maxAge = data.maxAge;
+            if (data.randomGenders !== undefined) randomSlotGenders = data.randomGenders;
+            if (flatpickrInstance) {
+                applyAgeLimitsToFlatpickr(flatpickrInstance);
             }
 
             DebugPrint("Evento 'toggleUI' recibido. Estado: " + data.state);
@@ -214,10 +522,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Navegación principal con flechas del teclado y tecla Escape
     document.addEventListener('keydown', (e) => {
         if (e.key === "Escape") {
-            // Cancelar el modal de borrado si está abierto
-            if (document.getElementById('delete-modal').style.display === "flex") {
-                DebugPrint("Modal de borrado cancelado mediante tecla ESC.");
-                document.getElementById('delete-modal').style.display = "none";
+            // Cerrar CUALQUIER modal que esté abierto (Borrar, Comprar, Ajustes...)
+            const openModals = Array.from(document.querySelectorAll('.modal-overlay')).filter(m => m.style.display === "flex");
+            if (openModals.length > 0) {
+                DebugPrint("Cerrando modal mediante tecla ESC.");
+                openModals.forEach(m => m.style.display = "none");
+                if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 return;
             }
             // Cancelar el formulario de registro de personaje
@@ -388,6 +698,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = e.target.closest('.gender-btn');
             target.classList.add('active');
             selectedGender = target.dataset.gender;
+
+            // --- Sobreescribimos el género aleatorio inicial con la decisión del jugador ---
+            if (selectedSlot !== null) {
+                // Convertimos el string a 1 (Mujer) o 0 (Hombre) para que coincida con la lógica de cl_main.lua
+                randomSlotGenders[selectedSlot] = selectedGender === "Femenino" ? 1 : 0;
+            }
 
             DebugPrint("Género actualizado a: " + selectedGender + ". Solicitando preview a Lua.");
             // Actualizamos la sombra (silueta) en el mundo en tiempo real al cambiar de género
@@ -1000,145 +1316,163 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // BOTONES DE LA PANTALLA DE OPCIONES
+    // BOTONES DE LA PANTALLA DE OPCIONES (Y DEMOS)
     // ==========================================
     (() => {
-        // --- Importar / Exportar (top bar) ---
+        // --- Importar / Exportar Múltiples (top bar) ---
         const btnImportMulti = document.getElementById('btn-import-multi');
         const btnExportMulti = document.getElementById('btn-export-multi');
+        if (btnImportMulti) btnImportMulti.addEventListener('click', () => alert("Próximamente disponible"));
+        if (btnExportMulti) btnExportMulti.addEventListener('click', () => alert("Próximamente disponible"));
 
-        if (btnImportMulti) {
-            btnImportMulti.addEventListener('click', () => {
-                DebugPrint("Click en Importar Múltiples.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
-        }
+        // ==========================================
+        // INYECCIÓN DE CONTENIDO DEMO PARA LOS MODALES
+        // ==========================================
+        const dummyData = {
+            'modal-buy-slots': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span>Slots Actuales:</span> <strong style="color: #fff;">4 / 7</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>Precio del 5º Slot:</span> <strong style="color: #00ff88; font-size: 16px;">1,500 Coins</strong>
+                </div>
+            </div>`,
 
-        if (btnExportMulti) {
-            btnExportMulti.addEventListener('click', () => {
-                DebugPrint("Click en Exportar Múltiples.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
+            'modal-restore-char': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
+                <i class="fas fa-search" style="font-size: 24px; opacity: 0.5; margin-bottom: 10px; display: block;"></i>
+                <p style="margin-bottom:0;">No se han encontrado personajes eliminados en los últimos 30 días.</p>
+            </div>`,
+
+            'modal-export-char': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
+                <p style="font-size: 13px; margin-bottom: 10px; margin-top:0;">Se generará un archivo encriptado <strong>.xmt</strong> en tus documentos con la progresión actual de tu personaje.</p>
+                <div style="background: rgba(255, 255, 255, 0.05); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 11px;">
+                    UID95316_backup_2025.xmt
+                </div>
+            </div>`,
+
+            'modal-import-char': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
+                <p style="margin-bottom: 8px; font-size: 12px; margin-top:0;">Pega tu clave de recuperación:</p>
+                <textarea style="width: 100%; height: 60px; padding: 10px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; outline: none; resize: none; font-family: monospace;" placeholder="Ej: DP-CHAR-XXXX-XXXX-XXXX..."></textarea>
+            </div>`,
+
+            'modal-default-char': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
+                <p style="margin-top:0; margin-bottom:10px;">Personaje que cargará automáticamente al conectar:</p>
+                <div style="padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                    <strong style="color: #fff;">Ninguno (Mostrar Selector)</strong>
+                </div>
+            </div>`,
+
+            'modal-spawn-pref': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px 0;">
+                    <input type="radio" name="spawn_type" checked style="accent-color: #fff; transform: scale(1.2);"> 
+                    <span>Usar mi última ubicación (Si es posible)</span>
+                </label>
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <input type="radio" name="spawn_type" style="accent-color: #fff; transform: scale(1.2);"> 
+                    <span>Forzar selector de aparición (qb-spawn)</span>
+                </label>
+            </div>`,
+
+            'modal-hide-locked': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
+                <p style="font-size: 13px; margin-top:0;">Oculta los slots con candado en la vista principal para una interfaz más limpia.</p>
+                <div style="margin-top: 15px; display: flex; align-items: center; justify-content: center; gap: 15px;">
+                    <span style="color: #fff; font-weight: bold;">Visible</span>
+                    <div style="width: 44px; height: 22px; background: rgba(255,255,255,0.2); border-radius: 11px; position: relative; cursor: pointer;">
+                        <div style="width: 16px; height: 16px; background: #fff; border-radius: 50%; position: absolute; left: 3px; top: 3px; transition: all 0.3s;"></div>
+                    </div>
+                    <span>Oculto</span>
+                </div>
+            </div>`,
+
+            'modal-sound-toggle': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span>Volumen de Interfaz</span>
+                    <strong style="color: #fff;">100%</strong>
+                </div>
+                <input type="range" min="0" max="100" value="100" style="width: 100%; accent-color: #fff; cursor: pointer;">
+            </div>`,
+
+            'modal-report-bug': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
+                <p style="font-size: 12px; margin-bottom: 8px; margin-top:0;">Describe el fallo con el mayor detalle posible:</p>
+                <textarea style="width: 100%; height: 80px; padding: 10px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; outline: none; resize: none;" placeholder="Estaba intentando cargar el personaje 2 y..."></textarea>
+            </div>`,
+
+            'modal-discord': `<div style="padding: 20px 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
+                <p style="font-size: 18px; font-weight: 900; color: #5865F2; letter-spacing: 1px; margin-bottom: 5px; margin-top:0;">
+                    <i class="fab fa-discord"></i> discord.gg/tuservidor
+                </p>
+                <p style="font-size: 12px; margin-bottom:0;">Se abrirá el overlay de Steam o tu navegador web.</p>
+            </div>`
+        };
+
+        // Inyectar el HTML generado en los respectivos modals
+        for (const [modalId, htmlContent] of Object.entries(dummyData)) {
+            const modalEl = document.getElementById(modalId);
+            if (modalEl) {
+                const bodyEl = modalEl.querySelector('.modal-body');
+                if (bodyEl) bodyEl.innerHTML = htmlContent;
+            }
         }
 
         // ==========================================
-        // BLOQUE 1: PERSONAJES
+        // EVENTOS DE APERTURA DE MODALS
         // ==========================================
-        const btnBuySlot = document.getElementById('btn-buy-slot');
-        if (btnBuySlot) {
-            btnBuySlot.addEventListener('click', () => {
-                DebugPrint("Click en Comprar Slots.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
-        }
+        const modalBindings = {
+            'btn-buy-slot': 'modal-buy-slots',
+            'btn-restore-char': 'modal-restore-char',
+            'btn-export-char': 'modal-export-char',
+            'btn-import-char': 'modal-import-char',
+            'btn-default-char': 'modal-default-char',
+            'btn-spawn-pref': 'modal-spawn-pref',
+            'btn-hide-locked': 'modal-hide-locked',
+            'btn-sound-toggle': 'modal-sound-toggle',
+            'btn-report-bug': 'modal-report-bug',
+            'btn-discord': 'modal-discord'
+        };
 
-        const btnRestoreChar = document.getElementById('btn-restore-char');
-        if (btnRestoreChar) {
-            btnRestoreChar.addEventListener('click', () => {
-                DebugPrint("Click en Restaurar Personaje.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
-        }
-
-        const btnFavoriteChar = document.getElementById('btn-favorite-char');
-        if (btnFavoriteChar) {
-            btnFavoriteChar.addEventListener('click', () => {
-                DebugPrint("Click en Marcar Favorito.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
-        }
-
-        const btnExportChar = document.getElementById('btn-export-char');
-        if (btnExportChar) {
-            btnExportChar.addEventListener('click', () => {
-                DebugPrint("Click en Exportar Personaje.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
-        }
-
-        const btnImportChar = document.getElementById('btn-import-char');
-        if (btnImportChar) {
-            btnImportChar.addEventListener('click', () => {
-                DebugPrint("Click en Importar Personaje.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
+        for (const [btnId, modalId] of Object.entries(modalBindings)) {
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    DebugPrint("Abriendo modal: " + modalId);
+                    const modal = document.getElementById(modalId);
+                    if (modal) {
+                        modal.style.display = "flex";
+                        if (typeof Sounds !== 'undefined') Sounds.playSelect();
+                    }
+                });
+            }
         }
 
         // ==========================================
-        // BLOQUE 2: PREFERENCIAS
+        // EVENTOS DE CIERRE DE MODALS (Click fuera y botones)
         // ==========================================
-        const btnDefaultChar = document.getElementById('btn-default-char');
-        if (btnDefaultChar) {
-            btnDefaultChar.addEventListener('click', () => {
-                DebugPrint("Click en Personaje por Defecto.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
+        document.querySelectorAll('.modal-overlay').forEach(modal => {
+            // Cerrar al hacer click en el overlay oscuro exterior
+            modal.addEventListener('mousedown', (e) => {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                    if (typeof Sounds !== 'undefined') Sounds.playCancel();
+                }
             });
-        }
 
-        const btnSpawnPref = document.getElementById('btn-spawn-pref');
-        if (btnSpawnPref) {
-            btnSpawnPref.addEventListener('click', () => {
-                DebugPrint("Click en Spawn Preferido.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
-        }
+            // Si es el de borrado, saltamos los botones porque tiene su lógica arriba
+            if (modal.id === 'delete-modal') return;
 
-        const btnHideLocked = document.getElementById('btn-hide-locked');
-        if (btnHideLocked) {
-            btnHideLocked.addEventListener('click', () => {
-                DebugPrint("Click en Ocultar Bloqueados.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
+            // Funciones de botones cancelar / confirmar genéricas para las DEMOS
+            const closeBtns = modal.querySelectorAll('.btn-modal-cancel, .btn-modal-primary');
+            closeBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    modal.style.display = 'none';
+                    if (btn.classList.contains('btn-modal-cancel')) {
+                        if (typeof Sounds !== 'undefined') Sounds.playCancel();
+                    } else {
+                        if (typeof Sounds !== 'undefined') Sounds.playSelect();
+                        DebugPrint("Acción de demostración confirmada en " + modal.id);
+                    }
+                });
             });
-        }
-
-        const btnSoundToggle = document.getElementById('btn-sound-toggle');
-        if (btnSoundToggle) {
-            btnSoundToggle.addEventListener('click', () => {
-                DebugPrint("Click en Sonidos de Interfaz.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
-        }
-
-        // ==========================================
-        // BLOQUE 3: SOPORTE
-        // ==========================================
-        const btnReportBug = document.getElementById('btn-report-bug');
-        if (btnReportBug) {
-            btnReportBug.addEventListener('click', () => {
-                DebugPrint("Click en Reportar Bug.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Abriendo reporte de bugs vinculado a DP-AdminMenu...");
-            });
-        }
-
-        const btnDiscord = document.getElementById('btn-discord');
-        if (btnDiscord) {
-            btnDiscord.addEventListener('click', () => {
-                DebugPrint("Click en Discord.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible: abre tu Discord");
-            });
-        }
-
-        const btnTerms = document.getElementById('btn-terms');
-        if (btnTerms) {
-            btnTerms.addEventListener('click', () => {
-                DebugPrint("Click en Términos del Servidor.");
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                alert("Próximamente disponible");
-            });
-        }
+        });
     })();
 });
 
@@ -1208,9 +1542,19 @@ function selectSlot(slotId, animateDirection = 0) {
             document.getElementById('action-header-text').innerText = Translate('ui_new_character', 'NUEVO PERSONAJE');
             document.getElementById('action-btn-text').innerText = Translate('ui_create', 'CREAR');
 
-            // Se solicita la previsualización del ped (sombra de hombre por defecto)
+            // --- DETECTAR Y MARCAR EL GÉNERO ALEATORIO DE ESTE SLOT ---
+            // Aseguramos que leemos la clave como número o string, dependiendo de cómo llegó
+            let currentSavedGender = randomSlotGenders[slotId] !== undefined ? randomSlotGenders[slotId] : randomSlotGenders[String(slotId)];
+            let rGender = currentSavedGender === 1 ? "Femenino" : "Masculino";
+            selectedGender = rGender;
+
+            document.querySelectorAll('.gender-btn').forEach(el => el.classList.remove('active'));
+            const btnNode = document.querySelector(`.gender-btn[data-gender="${rGender}"]`);
+            if (btnNode) btnNode.classList.add('active');
+
+            // Se solicita la previsualización del ped respetando el género que le tocó
             axios.post(`https://${resName}/previewPed`, JSON.stringify({
-                gender: "Masculino",
+                gender: selectedGender,
                 slot: slotId
             }));
         }
@@ -1457,7 +1801,24 @@ function renderSlots() {
 function resetForm() {
     document.getElementById('reg-firstname').value = '';
     document.getElementById('reg-lastname').value = '';
-    document.getElementById('reg-dob').value = '';
+
+    // Resetear Flatpickr correctamente
+    const dobInput = document.getElementById('reg-dob');
+    if (dobInput._flatpickr) {
+        dobInput._flatpickr.clear();
+        applyAgeLimitsToFlatpickr(dobInput._flatpickr);
+        if (dobInput._flatpickr.calendarContainer) {
+            dobInput._flatpickr.calendarContainer.classList.remove('fp-panel-open');
+        }
+    } else {
+        dobInput.value = '';
+    }
+
+    // Si los paneles custom de mes/año quedaron abiertos, los cerramos también
+    document.querySelectorAll('.fp-month-picker.visible, .fp-year-picker.visible').forEach(panel => {
+        panel.classList.remove('visible');
+    });
+
     selectedNationality = null;
     document.getElementById('nationality-text').innerText = Translate('ui_search_country', 'Selecciona un país de nacimiento');
     document.getElementById('nationality-display').classList.remove('selected');
@@ -1465,9 +1826,6 @@ function resetForm() {
     document.querySelectorAll('.dropdown-option').forEach((option) => {
         option.style.display = 'flex';
     });
-    document.querySelectorAll('.gender-btn').forEach(el => el.classList.remove('active'));
-    document.querySelector('[data-gender="Masculino"]').classList.add('active');
-    selectedGender = "Masculino";
 
     // Resetear el selector custom
     selectedNationality = null;

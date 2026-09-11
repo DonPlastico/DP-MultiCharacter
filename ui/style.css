@@ -2,6 +2,7 @@
 :root {
     --bg-dark: rgba(15, 15, 15, 0.95);
     --bg-card: rgba(25, 25, 25, 0.9);
+    --bg-card-black: rgb(25, 25, 25);
     --border-color: rgba(255, 255, 255, 0.1);
     --text-main: #ffffff;
     --text-muted: #aaaaaa;
@@ -792,7 +793,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     top: calc(100% + 5px);
     left: 0;
     width: 100%;
-    background: var(--bg-card);
+    background: var(--bg-card-black);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     z-index: 50;
@@ -814,7 +815,6 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 /* Buscador Sticky */
 .dropdown-search-sticky {
     position: sticky;
-    top: 0;
     background: #111111;
     padding: 10px 15px;
     border-bottom: 1px solid var(--border-color);
@@ -902,53 +902,176 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     text-transform: uppercase;
 }
 
-/* === MODAL === */
+/* === MODAL CONFIRMACIÓN BORRADO === */
 .modal-overlay {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.65);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 100;
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    opacity: 1;
+    animation: fadeInOverlay 0.3s ease;
 }
 
 .modal-content {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    padding: 30px;
-    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(20, 20, 20, 0.9), rgba(5, 5, 5, 0.95));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 35px 40px;
+    border-radius: 6px;
     text-align: center;
-    color: var(--text-main);
-    width: 350px;
+    color: #ffffff;
+    /* Cambio: Ancho adaptable según el contenido */
+    width: fit-content;
+    min-width: 400px;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.8), inset 0 1px 15px rgba(255, 255, 255, 0.02);
+    animation: modalPop 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Contenedor central vacío para inyectar contenido luego */
+.modal-body {
+    position: relative;
+    z-index: 2;
+    margin-bottom: 25px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.modal-glow {
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.03) 0%, transparent 50%);
+    pointer-events: none;
+    animation: rotateGlow 10s linear infinite;
+    z-index: 0;
+}
+
+/* Icono blanco estándar con destello */
+.modal-icon {
+    font-size: 32px;
+    color: #ffffff;
+    margin-bottom: 15px;
+    display: block;
+    position: relative;
+    z-index: 2;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
+    animation: pulseIconWhite 2s infinite alternate;
 }
 
 .warning-icon {
-    font-size: 48px;
-    color: var(--danger);
+    font-size: 32px;
+    color: #ff4747;
     margin-bottom: 15px;
+    display: block;
+    position: relative;
+    z-index: 2;
+    filter: drop-shadow(0 0 10px rgba(255, 71, 71, 0.3));
+    animation: pulseIconMono 2s infinite alternate;
 }
 
 .modal-content h3 {
+    font-size: 20px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
     margin-bottom: 10px;
+    color: #ffffff;
+    position: relative;
+    z-index: 2;
 }
 
 .modal-content p {
-    color: var(--text-muted);
+    color: #999999;
     font-size: 14px;
-    margin-bottom: 25px;
+    margin-bottom: 30px;
+    font-weight: 400;
+    position: relative;
+    z-index: 2;
 }
 
 .modal-actions {
     display: flex;
     gap: 15px;
+    width: 100%;
+    position: relative;
+    z-index: 2;
 }
 
-.modal-actions button {
+.btn-modal {
     flex: 1;
+    padding: 14px 0;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    outline: none;
+}
+
+.btn-modal-cancel {
+    background: #1a1a1a;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.btn-modal-cancel:hover {
+    background: #252525;
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.btn-modal-confirm {
+    background: rgba(255, 71, 71, 0.05);
+    color: #ff4747;
+    border: 1px solid rgba(255, 71, 71, 0.3);
+}
+
+.btn-modal-confirm:hover {
+    background: rgba(255, 71, 71, 0.15);
+    border-color: #ff4747;
+    box-shadow: 0 5px 15px rgba(255, 71, 71, 0.2);
+    transform: translateY(-2px);
+}
+
+.btn-modal:active {
+    transform: translateY(0);
+}
+
+/* Botón principal (Blanco monocromático) */
+.btn-modal-primary {
+    background: #ffffff;
+    color: #000000;
+    border: 1px solid #ffffff;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
+}
+
+.btn-modal-primary:hover {
+    background: #d4d4d4;
+    border-color: #d4d4d4;
+    box-shadow: 0 5px 25px rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
 }
 
 /* === REFLEJO INFERIOR: REPLICA EXACTA EXPANDIDA HASTA EL FONDO === */
@@ -2259,15 +2382,471 @@ sidebar-block:nth-child(1) {
     font-weight: 700;
 }
 
+/* ==========================================================================
+   FLATPICKR CUSTOM THEME (ESTILO OSCURO SIN BLUR)
+   ========================================================================== */
+/* Envoltorio principal generado por static: true */
+.flatpickr-wrapper {
+    display: block !important;
+    width: 100% !important;
+    position: relative !important;
+}
 
+/* Forzar que el input de fecha recupere su ancho completo dentro del nuevo wrapper */
+.flatpickr-wrapper input {
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
 
+.flatpickr-calendar {
+    background: var(--bg-card-black) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 4px !important;
+    box-shadow: rgb(0 0 0 / 80%) 0px 10px 30px !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 6px !important;
+    padding: 10px !important;
+    font-family: 'Roboto', sans-serif !important;
+    color: #fff !important;
+    transform: translateY(0px) !important;
+    transition: opacity 0.2s ease 0s, transform 0.2s ease 0s !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+    top: 100% !important;
+    margin-top: 5px !important;
+}
 
+.flatpickr-innerContainer,
+.flatpickr-rContainer,
+.dayContainer,
+.flatpickr-days {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 100% !important;
+    box-sizing: border-box;
+}
 
+/* Cabecera y Meses */
+.flatpickr-months .flatpickr-month {
+    background: transparent !important;
+    color: #fff !important;
+}
 
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+    background: rgba(10, 10, 10, 0.9) !important;
+    color: #fff !important;
+    outline: none !important;
+    border-radius: 4px;
+    padding: 2px;
+}
 
+.flatpickr-current-month .flatpickr-monthDropdown-months:hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+}
 
+.flatpickr-current-month .numInputWrapper span.arrowUp:after {
+    border-bottom-color: #fff !important;
+}
 
+.flatpickr-current-month .numInputWrapper span.arrowDown:after {
+    border-top-color: #fff !important;
+}
 
+.flatpickr-months .flatpickr-prev-month,
+.flatpickr-months .flatpickr-next-month {
+    color: #fff !important;
+    fill: #fff !important;
+}
+
+.flatpickr-months .flatpickr-prev-month:hover,
+.flatpickr-months .flatpickr-next-month:hover {
+    color: #aaa !important;
+}
+
+/* ==========================================================================
+   CABECERA CUSTOM (DOBLE FILA: AÑO Y MES)
+   ========================================================================== */
+.flatpickr-months {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    padding: 5px !important;
+    height: auto !important;
+    /* Desactiva la altura fija nativa */
+    background: transparent !important;
+}
+
+.fp-custom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.fp-custom-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.4);
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.fp-custom-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+/* === ESTADOS DESHABILITADOS (LIMITES DE FECHA ALCANZADOS) === */
+.fp-custom-btn.disabled,
+.fp-custom-btn.flatpickr-disabled {
+    background: transparent !important;
+    color: rgba(255, 255, 255, 0.1) !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
+}
+
+.fp-custom-btn.disabled:hover,
+.fp-custom-btn.flatpickr-disabled:hover {
+    background: transparent !important;
+    color: rgba(255, 255, 255, 0.1) !important;
+    transform: none !important;
+}
+
+/* === ESTILOS DEL INPUT DE AÑO === */
+.numInputWrapper {
+    width: 100% !important;
+    display: flex;
+    justify-content: center;
+}
+
+.numInput.cur-year {
+    background: transparent !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 16px !important;
+    text-align: center !important;
+    border: none !important;
+    padding: 0 !important;
+    width: auto !important;
+    pointer-events: none;
+    /* Bloquea la edición manual para evitar bugs visuales */
+}
+
+/* === ESTILOS DEL SELECT DE MES === */
+.flatpickr-monthDropdown-months {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 15px !important;
+    border: none !important;
+    outline: none !important;
+    text-align: center !important;
+    text-align-last: center;
+    width: auto !important;
+    margin: 0 auto !important;
+    cursor: pointer;
+    padding: 0 10px !important;
+    display: none !important;
+}
+
+.flatpickr-monthDropdown-months option {
+    background: #111 !important;
+    color: #fff !important;
+}
+
+/* Días de la semana */
+span.flatpickr-weekday {
+    color: rgba(255, 255, 255, 0.4) !important;
+    font-weight: 800 !important;
+    font-size: 11px !important;
+    letter-spacing: 1px;
+}
+
+/* Días numéricos */
+.flatpickr-day {
+    color: #cccccc !important;
+    border-radius: 4px !important;
+    border: 1px solid transparent !important;
+    transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+    font-weight: 500;
+
+    /* Distribuir equitativamente los 7 días (100% / 7 = 14.28%) */
+    max-width: 14.28% !important;
+    flex-basis: 14.28% !important;
+    height: 35px !important;
+    line-height: 33px !important;
+}
+
+/* Hover de los días */
+.flatpickr-day:hover,
+.flatpickr-day.prevMonthDay:hover,
+.flatpickr-day.nextMonthDay:hover,
+.flatpickr-day:focus {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+    transform: scale(1.1);
+}
+
+/* Día Seleccionado (Estilo botón blanco) */
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange,
+.flatpickr-day.selected:focus,
+.flatpickr-day.selected:hover {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border-color: #ffffff !important;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.3) !important;
+    font-weight: 900 !important;
+    transform: scale(1.05);
+}
+
+/* Días fuera del mes o deshabilitados */
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover {
+    color: rgba(255, 255, 255, 0.1) !important;
+    transform: none;
+}
+
+.flatpickr-day.prevMonthDay,
+.flatpickr-day.nextMonthDay {
+    color: rgba(255, 255, 255, 0.25) !important;
+}
+
+/* Flechitas del modal (Ocultar las que trae por defecto) */
+.flatpickr-calendar.arrowTop:before,
+.flatpickr-calendar.arrowTop:after {
+    display: none !important;
+}
+
+.flatpickr-calendar.arrowBottom:before,
+.flatpickr-calendar.arrowBottom:after {
+    display: none !important;
+}
+
+/* ==========================================================================
+   SELECTORES CUSTOM DE MES / AÑO
+   ========================================================================== */
+.fp-days-stack {
+    position: relative;
+    width: 100%;
+    /* Mínimo alto para que el panel de años tenga espacio para hacer scroll */
+    min-height: 220px;
+}
+
+/* Paneles ocultos por defecto */
+.fp-month-picker,
+.fp-year-picker {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 5;
+    box-sizing: border-box;
+    background: transparent;
+    /* TRUCO: Elimina el destello negro al animarse */
+    animation: fpPanelIn 0.18s ease;
+}
+
+/* --- TAMAÑOS INDEPENDIENTES --- */
+.fp-month-picker {
+    height: auto;
+    /* Se ajusta a los meses sin barra de scroll */
+}
+
+.fp-year-picker {
+    height: 100%;
+    /* Ocupa todo para poder scrollear 100 años */
+}
+
+.fp-month-picker.visible {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.fp-year-picker.visible {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+}
+
+/* --- TÍTULO DINÁMICO EN PANELES --- */
+.fp-panel-title {
+    text-align: center;
+    font-size: 10px;
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    padding: 5px;
+    margin: 0;
+}
+
+/* --- SELECTOR DE MES: Grid 3x4 (Sin scroll) --- */
+.fp-month-picker .fp-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    padding: 10px;
+    gap: 6px;
+}
+
+/* --- SELECTOR DE AÑO: Grid 3xX (Con scroll) --- */
+.fp-year-picker .fp-picker-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    padding: 10px;
+    gap: 6px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    align-content: start;
+}
+
+/* Scrollbars para los años */
+.fp-year-picker .fp-picker-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.fp-year-picker .fp-picker-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.fp-year-picker .fp-picker-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+}
+
+.fp-year-picker .fp-picker-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* --- BOTONES DE SELECCIÓN (Mes/Año) --- */
+.fp-month-btn,
+.fp-year-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 4px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    color: #cccccc;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    text-align: center;
+}
+
+.fp-month-btn:hover,
+.fp-year-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    transform: scale(1.03);
+}
+
+.fp-month-btn.selected,
+.fp-year-btn.selected {
+    background: #ffffff;
+    color: #000000;
+    border-color: #ffffff;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+    font-weight: 900;
+}
+
+/* --- FLECHA INFERIOR PARA CERRAR --- */
+.fp-close-picker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 10px;
+    padding: 4px 0;
+    color: rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.fp-close-picker:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.fp-close-picker .material-symbols-outlined {
+    font-size: 20px;
+}
+
+/* --- TEXTOS CLICABLES DE LA CABECERA (AÑO/MES) --- */
+.fp-custom-month-display,
+.fp-custom-row .numInput.cur-year {
+    flex: 1;
+    text-align: center !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 15px !important;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    padding: 5px 0 !important;
+    transition: all 0.2s ease !important;
+    background: transparent !important;
+    border: none !important;
+    letter-spacing: 0.5px;
+}
+
+.fp-custom-month-display:hover,
+.fp-custom-row .numInput.cur-year:hover {
+    color: #aaaaaa !important;
+    transform: scale(1.05);
+}
+
+/* ==========================================================================
+   COLAPSO SUAVE DE DÍAS Y SEMANAS (Al abrir paneles)
+   ========================================================================== */
+.flatpickr-weekdays {
+    transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+    height: 28px !important;
+    overflow: hidden !important;
+}
+
+.flatpickr-days {
+    transition: opacity 0.25s ease, visibility 0.25s ease !important;
+}
+
+.fp-panel-open .flatpickr-weekdays {
+    opacity: 0 !important;
+    height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+}
+
+.fp-panel-open .flatpickr-days {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    position: absolute !important;
+}
 
 
 
@@ -2442,5 +3021,75 @@ sidebar-block:nth-child(1) {
     50% {
         opacity: 0.5;
         transform: scale(0.85);
+    }
+}
+
+@keyframes rotateGlow {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes modalPop {
+    0% {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes pulseIconMono {
+    0% {
+        filter: drop-shadow(0 0 5px rgba(255, 71, 71, 0.1));
+        transform: scale(1);
+    }
+
+    100% {
+        filter: drop-shadow(0 0 20px rgba(255, 71, 71, 0.6));
+        transform: scale(1.05);
+    }
+}
+
+@keyframes pulseIconWhite {
+    0% {
+        filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.1));
+        transform: scale(1);
+    }
+
+    100% {
+        filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.6));
+        transform: scale(1.05);
+    }
+}
+
+@keyframes fadeInOverlay {
+    from {
+        opacity: 0;
+        backdrop-filter: blur(0px);
+    }
+
+    to {
+        opacity: 1;
+        backdrop-filter: blur(15px);
+    }
+}
+
+@keyframes fpPanelIn {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }

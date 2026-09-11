@@ -4,13 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>DP-MultiCharacter</title>
+
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap">
-    <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-    <script src='https://unpkg.com/axios/dist/axios.min.js'></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+    <script src='https://unpkg.com/axios/dist/axios.min.js'></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 </head>
 
 <body>
@@ -359,7 +366,7 @@
                                     <div class="sidebar-item-content">
                                         <span class="sidebar-item-title" data-trans="ui_report_bug">Reportar un
                                             Bug</span>
-                                        <span class="sidebar-item-sub">DP-AdminMenu · Soporte técnico</span>
+                                        <span class="sidebar-item-sub">Soporte técnico</span>
                                     </div>
                                     <i class="fas fa-chevron-right sidebar-item-arrow"></i>
                                 </button>
@@ -514,7 +521,7 @@
 
                 <div class="input-group">
                     <label for="reg-dob" data-trans="ui_birthdate">[ui_birthdate]</label>
-                    <input type="date" id="reg-dob" min="1930-01-01" max="2005-12-31">
+                    <input type="text" id="reg-dob" placeholder="YYYY-MM-DD" readonly style="cursor: pointer;">
                 </div>
 
                 <div class="input-group">
@@ -536,29 +543,176 @@
                     <button id="btn-create-reg" class="btn-primary" data-trans="ui_create">[ui_create]</button>
                 </div>
             </div>
-
-            <!-- Controles abajo a la derecha -->
-            <div class="character-footer">
-                <div class="control-item">
-                    <div class="key-box">ESC</div> <span data-trans="ui_exit">[ui_exit]</span>
-                </div>
-            </div>
         </div>
 
         <!-- MODAL CONFIRMACIÓN DE BORRADO -->
         <div id="delete-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content">
-                <span class="material-symbols-outlined warning-icon">warning</span>
+                <div class="modal-glow"></div>
+                <i class="fas fa-exclamation-triangle warning-icon"></i>
                 <h3 data-trans="ui_delete_title">[ui_delete_title]</h3>
                 <p data-trans="ui_delete_warning">[ui_delete_warning]</p>
                 <div class="modal-actions">
-                    <button id="btn-modal-cancel" class="btn-secondary" data-trans="ui_cancel">[ui_cancel]</button>
-                    <button id="btn-modal-confirm" class="btn-danger"
+                    <button id="btn-modal-cancel" class="btn-modal btn-modal-cancel"
+                        data-trans="ui_cancel">[ui_cancel]</button>
+                    <button id="btn-modal-confirm" class="btn-modal btn-modal-confirm"
                         data-trans="ui_delete_confirm_btn">[ui_delete_confirm_btn]</button>
                 </div>
             </div>
         </div>
 
+        <!-- Comprar Slots -->
+        <div id="modal-buy-slots" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-plus-square modal-icon"></i>
+                <h3>COMPRAR SLOTS</h3>
+                <p>Amplía tu límite de personajes.</p>
+                <div class="modal-body">
+                    <!-- Contenido inyectable -->
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> CONTINUAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Restaurar Personaje -->
+        <div id="modal-restore-char" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-clock-rotate-left modal-icon"></i>
+                <h3>RESTAURAR PERSONAJE</h3>
+                <p>Recupera un personaje borrado.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> RESTAURAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exportar Personaje -->
+        <div id="modal-export-char" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-file-export modal-icon"></i>
+                <h3>EXPORTAR PERSONAJE</h3>
+                <p>Guarda un backup individual.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> EXPORTAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Importar Personaje -->
+        <div id="modal-import-char" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-file-import modal-icon"></i>
+                <h3>IMPORTAR PERSONAJE</h3>
+                <p>Restaura un backup previo.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> IMPORTAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Personaje por Defecto -->
+        <div id="modal-default-char" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-user-check modal-icon"></i>
+                <h3>PERSONAJE POR DEFECTO</h3>
+                <p>Se cargará solo al entrar al server.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> APLICAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Spawn Preferido -->
+        <div id="modal-spawn-pref" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-map-location-dot modal-icon"></i>
+                <h3>SPAWN PREFERIDO</h3>
+                <p>Última ubicación vs. punto fijo.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> GUARDAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ocultar Bloqueados -->
+        <div id="modal-hide-locked" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-eye-slash modal-icon"></i>
+                <h3>OCULTAR BLOQUEADOS</h3>
+                <p>Slots vacíos fuera del selector.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> ACTUALIZAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sonidos de Interfaz -->
+        <div id="modal-sound-toggle" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-volume-high modal-icon"></i>
+                <h3>SONIDOS DE INTERFAZ</h3>
+                <p>Activar/desactivar clicks y hovers.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> GUARDAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reportar un Bug -->
+        <div id="modal-report-bug" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-bug modal-icon"></i>
+                <h3>REPORTAR UN BUG</h3>
+                <p>Soporte técnico.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-paper-plane"></i> ENVIAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Discord / Ayuda -->
+        <div id="modal-discord" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fab fa-discord modal-icon"></i>
+                <h3>DISCORD / AYUDA</h3>
+                <p>Únete a la comunidad si necesitas ayuda externa.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-external-link-alt"></i> ABRIR
+                        ENLACE</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="js/app.js"></script>
