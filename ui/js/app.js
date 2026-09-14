@@ -1359,13 +1359,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <textarea style="width: 100%; height: 60px; padding: 10px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; outline: none; resize: none; font-family: monospace;" placeholder="Ej: DP-CHAR-XXXX-XXXX-XXXX..."></textarea>
             </div>`,
 
-            'modal-default-char': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
-                <p style="margin-top:0; margin-bottom:10px;">Personaje que cargará automáticamente al conectar:</p>
-                <div style="padding: 10px; background: rgba(255,255,255,0.05); border-radius: 4px;">
-                    <strong style="color: #fff;">Ninguno (Mostrar Selector)</strong>
-                </div>
-            </div>`,
-
             'modal-spawn-pref': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px 0;">
                     <input type="radio" name="spawn_type" checked style="accent-color: #fff; transform: scale(1.2);"> 
@@ -1426,7 +1419,6 @@ document.addEventListener('DOMContentLoaded', () => {
             'btn-restore-char': 'modal-restore-char',
             'btn-export-char': 'modal-export-char',
             'btn-import-char': 'modal-import-char',
-            'btn-default-char': 'modal-default-char',
             'btn-spawn-pref': 'modal-spawn-pref',
             'btn-hide-locked': 'modal-hide-locked',
             'btn-sound-toggle': 'modal-sound-toggle',

@@ -1783,7 +1783,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     overflow-y: auto;
     padding-right: 4px;
     min-height: 0;
@@ -1810,13 +1810,13 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .sidebar-block {
     background: rgba(10, 10, 10, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.06);
-    padding: 14px 16px;
+    padding: 10px 12px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 5px;
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 10px 40px rgb(0 0 0 / 60%);
     animation: blockSlideIn 0.4s ease backwards;
 }
 
@@ -1836,9 +1836,8 @@ sidebar-block:nth-child(1) {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding-bottom: 10px;
+    padding-bottom: 5px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    margin-bottom: 4px;
 }
 
 .sidebar-block-dot {
