@@ -451,6 +451,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // Pedimos la lista fresca al servidor: llegará por 'setupCharacters' y se
             // recalcularán los slots, la tabla, las stats, etc.
             axios.post(`https://${resName}/setupCharacters`, JSON.stringify({}));
+        } else if (data.action === "characterDeleted") {
+            DebugPrint("Evento 'characterDeleted' recibido (success: " + data.success + "). Refrescando lista al instante.");
+            // El servidor ya terminó de borrar: pedimos la lista fresca AHORA,
+            // sin esperar a que el usuario salga y vuelva a entrar.
+            axios.post(`https://${resName}/setupCharacters`, JSON.stringify({}));
         }
     });
 
@@ -788,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('detailed-char-info').classList.add('hidden');
             document.getElementById('action-buttons').style.display = "none";
 
-            // Salimos del zoom igual que con ESC, para que la lista se recargue con la cámara ya alejada
+            // Salimos del zoom igual que con ESC, para que la lista recargue con la cámara ya alejada
             isZoomed = false;
             isUnfocusing = true;
             navQueue = [];
@@ -797,12 +802,11 @@ document.addEventListener('DOMContentLoaded', () => {
             setFooterZoomState(false);
             axios.post(`https://${resName}/unfocusCharacter`, JSON.stringify({}));
 
-            // Re-solicitamos la lista de personajes actualizada después de que la cámara vuelva
+            // La lista se refrescará sola cuando llegue 'characterDeleted' (confirmación del servidor).
+            // Solo re-mostramos los slots cuando la cámara haya terminado de alejarse.
             setTimeout(() => {
                 document.getElementById('slots-wrapper').classList.remove('slots-hidden');
                 isUnfocusing = false;
-                DebugPrint("Solicitando lista actualizada de personajes tras borrado.");
-                axios.post(`https://${resName}/setupCharacters`, JSON.stringify({}));
             }, UNFOCUS_DURATION);
         }
     });

@@ -54,7 +54,15 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', func
                     result[i].metadata = json.decode(result[i].metadata)
                 end
 
-                plyChars[#plyChars + 1] = result[i]
+                -- LIMPIEZA AUTOMÁTICA de personajes marcados como borrados (soft delete antiguo):
+                -- antes quedaban en la BD aunque no se mostraran. Ahora los borramos de verdad.
+                if result[i].metadata and result[i].metadata.deleted then
+                    DebugPrint("Eliminando físicamente personaje previamente marcado como borrado (CitizenID: " ..
+                                   tostring(result[i].citizenid) .. ")")
+                    MySQL.query.await('DELETE FROM `players` WHERE citizenid = ?', {result[i].citizenid})
+                else
+                    plyChars[#plyChars + 1] = result[i]
+                end
             end
 
             DebugPrint("Enviando datos procesados de los personajes al cliente.")
@@ -62,21 +70,150 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', func
         end)
 end)
 
+-- ==========================================
+-- 🗑️ BORRADO DE PERSONAJE (A PRUEBA DE FALLOS)
+-- ==========================================
+-- Definimos aquí la lista de tablas que intenta borrar qb-core con
+-- "DELETE ... WHERE citizenid = ?", para replicarla pero de forma segura.
+-- (qb-core hace la MISMA transacción; si una tabla no existe o no tiene
+-- la columna citizenid, la transacción completa aborta y NO se borra nada).
+local DELETE_TABLES = {'apartments', 'bank_accounts', 'phone_invoices', 'playerskins', 'player_contacts',
+                       'player_houses', 'player_mails', 'player_outfits', 'player_vehicles'}
+
+-- Comprueba si la tabla existe y tiene la columna citizenid
+-- (evita errores en rojo de "Unknown column" / "doesn't exist")
+local function TableSupportsCitizenId(tabla)
+    local ok, res = pcall(MySQL.query.await,
+        "SELECT COUNT(*) AS total FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'citizenid'",
+        {tabla})
+    if not ok or not res or not res[1] then
+        return false
+    end
+    return tonumber(res[1].total) > 0
+end
+
 -- Evento para eliminar definitivamente un personaje de la base de datos
-RegisterNetEvent('DP-MultiCharacter:server:deleteCharacter', function(citizenid)
+-- (Usamos callback para que el cliente sepa CUÁNDO termina el borrado
+--  y refresque la lista al instante, sin tener que recargar la UI)
+QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', function(source, cb, citizenid)
     local src = source
     DebugPrint("Solicitud de eliminación de personaje recibida. CitizenID: " .. tostring(citizenid))
 
     -- Verificamos si el botón de borrado está habilitado en la configuración
     if not Config.EnableDeleteButton then
         DebugPrint("El borrado de personajes está desactivado. Cancelando acción.")
+        cb(false)
         return
     end
 
-    -- Procedemos con la eliminación usando la función nativa de QBCore
-    QBCore.Player.DeleteCharacter(src, citizenid)
-    DebugPrint("Personaje eliminado exitosamente por QBCore (CitizenID: " .. tostring(citizenid) .. ")")
-    TriggerClientEvent('QBCore:Notify', src, "Personaje eliminado correctamente", "success")
+    if not citizenid or citizenid == '' then
+        DebugPrint("ERROR: CitizenID vacío. No se puede borrar el personaje.")
+        TriggerClientEvent('QBCore:Notify', src, "No se pudo borrar el personaje (CitizenID vacío)", "error")
+        cb(false)
+        return
+    end
+
+    -- Seguridad: comprobamos que el personaje pertenezca realmente al jugador
+    -- (misma comprobación que hace QBCore.Player.DeleteCharacter)
+    local license = QBCore.Functions.GetIdentifier(src, 'license')
+    local ownerLicense = MySQL.scalar.await('SELECT license FROM players WHERE citizenid = ?', {citizenid})
+
+    if not ownerLicense or ownerLicense ~= license then
+        DebugPrint("ERROR: El personaje no pertenece a este jugador o no existe. CitizenID: " .. tostring(citizenid))
+        TriggerClientEvent('QBCore:Notify', src, "No se pudo borrar el personaje", "error")
+        cb(false)
+        return
+    end
+
+    DebugPrint("Verificación de propiedad OK. Procediendo con el borrado.")
+
+    -- 1) HARD DELETE en las tablas relacionadas, UNA A UNA (sin transacción suicida):
+    --    si alguna falla, el resto se completa igual y avisamos del fallo concreto.
+    --    (El borrado físico en `players` se hace al final, en el paso 5.)
+    local errors = {}
+    for _, tabla in ipairs(DELETE_TABLES) do
+        if TableSupportsCitizenId(tabla) then
+            local ok, err = pcall(function()
+                MySQL.query.await('DELETE FROM `' .. tabla .. '` WHERE citizenid = ?', {citizenid})
+            end)
+            if not ok then
+                DebugPrint("  ⚠ No se pudo limpiar la tabla " .. tabla .. ": " .. tostring(err))
+                errors[#errors + 1] = tabla
+            else
+                DebugPrint("  → Tabla " .. tabla .. " limpiada para CitizenID " .. citizenid)
+            end
+        else
+            DebugPrint("  ⚠ Tabla " .. tabla .. " omitida (no existe o no tiene columna citizenid).")
+        end
+    end
+
+    -- 3) Limpieza del inventario de DP-Inventory (usa 'identifier' en vez de 'citizenid')
+    local invOk, invErr = pcall(function()
+        MySQL.query.await('DELETE FROM `inventories` WHERE identifier = ?', {citizenid})
+    end)
+    if not invOk then
+        DebugPrint("  ⚠ No se pudo limpiar el inventario: " .. tostring(invErr))
+        errors[#errors + 1] = 'inventories'
+    end
+
+    -- 4) Limpieza de tablas del teléfono que usan device_id (relacionado con citizenid vía metadata)
+    local phoneTables = {'phone_messages', 'phone_gallery', 'phone_note', 'phone_bleets'}
+    for _, tabla in ipairs(phoneTables) do
+        local ok, err = pcall(function()
+            MySQL.query.await('DELETE FROM `' .. tabla .. '` WHERE device_id = ?', {citizenid})
+        end)
+        if not ok then
+            DebugPrint("  ⚠ No se pudo limpiar " .. tabla .. ": " .. tostring(err))
+        end
+    end
+
+    -- 5) HARD DELETE REAL del personaje en la tabla `players`
+    --    (esto es lo que elimina la fila de la base de datos de verdad)
+    local delOk, delErr = pcall(function()
+        MySQL.query.await('DELETE FROM `players` WHERE citizenid = ?', {citizenid})
+    end)
+    if not delOk then
+        DebugPrint("  ⚠ ERROR eliminando el personaje de players: " .. tostring(delErr))
+        errors[#errors + 1] = 'players'
+    else
+        DebugPrint("  → Personaje eliminado físicamente de la tabla players (CitizenID: " .. tostring(citizenid) ..
+                       ")")
+    end
+
+    -- 6) Si el personaje borrado estaba cargado en memoria (Player object activo con ese citizenid),
+    --    lo limpiamos de QBCore SIN pasar por Logout() ni por Save().
+    --    Motivo: tanto player.Functions.Logout() como QBCore.Player.Logout() ejecutan internamente
+    --    player.Functions.Save() ANTES de limpiar la sesión (así lo hace qb-core de fábrica). Ese guardado
+    --    vuelve a escribir en `players` la fila que acabamos de eliminar, "resucitando" al personaje.
+    --    Por eso antes hacía falta pulsar borrar 2 veces: la 1ª vez se borraba y el Save() del Logout lo
+    --    devolvía; la 2ª vez ya no quedaba ningún Player en memoria que lo resucitara.
+    --    Para evitarlo, limpiamos las tablas internas de QBCore directamente, sin invocar ningún Save()
+    --    (con pcall por seguridad, por si algún fork de QBCore no expone esas tablas con ese nombre).
+    local player = QBCore.Functions.GetPlayer(src)
+    if player and player.PlayerData and player.PlayerData.citizenid == citizenid then
+        DebugPrint("  → Limpiando sesión en memoria del personaje borrado (sin guardar, para no resucitarlo).")
+        TriggerClientEvent('QBCore:Client:OnPlayerUnload', src)
+        TriggerEvent('QBCore:Server:OnPlayerUnload', src)
+        pcall(function()
+            if QBCore.Players then
+                QBCore.Players[src] = nil
+            end
+            if QBCore.PlayersByCitizenId then
+                QBCore.PlayersByCitizenId[citizenid] = nil
+            end
+        end)
+    end
+
+    if #errors == 0 then
+        DebugPrint("Personaje eliminado exitosamente (CitizenID: " .. tostring(citizenid) .. ")")
+        TriggerClientEvent('QBCore:Notify', src, "Personaje eliminado correctamente", "success")
+    else
+        DebugPrint("Personaje eliminado con errores parciales: " .. table.concat(errors, ", "))
+        TriggerClientEvent('QBCore:Notify', src,
+            "Personaje eliminado, pero hubo errores en: " .. table.concat(errors, ", "), "error")
+    end
+
+    cb(true)
 end)
 
 -- Callback para obtener la skin de un personaje específico (modelo y ropa)

@@ -121,6 +121,10 @@ function SetupCamera(state)
         SetCamActive(cam, false)
         DestroyCam(cam, true)
         RenderScriptCams(false, false, 1, true, true)
+
+        -- SOLUCIÓN: Devolver la luz a la pantalla para que qb-clothing se vea
+        Wait(500)
+        DoScreenFadeIn(1000)
     end
 end
 

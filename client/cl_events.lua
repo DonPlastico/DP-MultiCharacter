@@ -110,8 +110,14 @@ end)
 RegisterNUICallback('deleteCharacter', function(data, cb)
     DebugPrint("NUI Callback: 'deleteCharacter' - Solicitud para borrar personaje con CitizenID: " ..
                    tostring(data.citizenid))
-    TriggerServerEvent('DP-MultiCharacter:server:deleteCharacter', data.citizenid)
-    cb("ok")
+    QBCore.Functions.TriggerCallback('DP-MultiCharacter:server:deleteCharacter', function(success)
+        SendNUIMessage({
+            action = "characterDeleted",
+            success = success,
+            citizenid = data.citizenid
+        })
+        cb("ok")
+    end, data.citizenid)
 end)
 
 -- Reproducir sonidos de interfaz (clicks, hover, errores, etc.) para darle estilo al menú
