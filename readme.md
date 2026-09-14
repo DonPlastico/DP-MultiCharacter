@@ -91,10 +91,9 @@ DP-MultiCharacter/
 | `qb-spawn` | Selector de puntos de spawn cuando `SkipSelection = false` | Solo si no usas `SkipSelection` |
 | `DP-Inventory` | Entrega de `id_card` y `phone` al crear personaje | Opcional, falla si no está (revisar `sv_utils.lua`) |
 | `DP-RealMoney` | Sincroniza HUD de dinero (cash/black_money/crypto) | Opcional, se detecta automáticamente con `GetResourceState` |
-
 ---
 
-## 🚧 Roadmap / Pendientes por implementar
+## 🚧 Pendientes por implementar
 
 Lista de trabajo abierta: funcionalidades que hoy están solo como maqueta visual (placeholders, `alert("Próximamente disponible")`, botones sin lógica) o que directamente aún no existen, ordenadas para abordarlas más adelante. Cada punto describe el comportamiento final esperado.
 
@@ -164,11 +163,11 @@ El botón de exportar de cada fila en la tabla debe abrir el **mismo modal** de 
 ### 11. Comando de Logout funcional (`Config.CommandLogOut`)
 Actualmente el comando está definido en el config pero no hace nada. Debe: quitar al jugador el personaje actualmente cargado y volver a mostrarle la interfaz completa de `DP-MultiCharacter` desde cero (Landing: Continuar / Personajes / Opciones), permitiéndole elegir o cambiar de personaje libremente cuando quiera.
 
-### 12. Selector de Spawn con imágenes (estilo "carrusel")
-Cuando se desarrolle el sistema de Spawn propio (ver punto 5), debe presentarse como una selección visual con fotos por cada punto de spawn (según referencia visual ya compartida por Discord), alimentada dinámicamente desde `Config.SpawnPoints` (label, descripción, imagen, coords)... El SkipSelection, DefaultSpawn y todo lo demas...
+### 12. Selector de Spawn estilo imágenes del discord
+Cuando se desarrolle el sistema de Spawn propio (ver punto 5), debe presentarse como las referencias visuales ya compartida por Discord, alimentada dinámicamente desde `Config.SpawnPoints` (label, descripción, imagen, coords)... El SkipSelection, DefaultSpawn y todo lo demas...
 
 ### 13. Modal de bienvenida al crear personaje (Start Items)
-Al crear un personaje nuevo, debe aparecer un modal/NUI (según referencia visual ya compartida por Discord) mostrando los ítems de bienvenida que va a recibir, configurado dinámicamente a partir de `Config.StartItemsList`.
+Al crear un personaje nuevo (antes de que salga el qb-clothing), debe aparecer un modal/NUI (según referencia visual ya compartida por Discord) mostrando los ítems de bienvenida que va a recibir, configurado dinámicamente a partir de `Config.StartItemsList`.
 
 ### 14. Ocultar Exportar si `Config.ExportCharacters = false`
 Si esta opción del config está desactivada, **todos** los botones y modales relacionados con exportar personajes (tanto el general del sidebar como el individual de cada fila de la tabla) deben quedar completamente ocultos de la UI. Solo visibles si está en `true`.
@@ -180,4 +179,43 @@ Mismo criterio que el punto 14, aplicado al botón/modal de Importar Personaje.
 Revisar **todos** los archivos del recurso y sustituir cualquier referencia literal a `"mp_m_freemode_01"` / `"mp_f_freemode_01"` por una lectura real de `Config.DefaultMaleModel` / `Config.DefaultFemaleModel`, para que cambiar el modelo base desde el config funcione de verdad en todos los puntos donde se usa (spawn de peds, preview de género, etc.).
 
 ### 17. Completar todos los locales (traducción íntegra)
-Revisar `locales/es.lua` y el resto de idiomas (`en`, `fr`, `it`, `de`, `pt`) para que **absolutamente todo el texto del script** pase por el sistema de traducciones (`_U()` / `data-trans`) — sin textos sueltos hardcodeados en español directamente en el HTML/JS que se queden sin traducir al cambiar `Config.Locale`.
+Revisar `locales/es.lua` y el resto de idiomas (`en`, `fr`, `it`, `de`, `pt`) para que **absolutamente todo el texto del script** pase por el sistema de traducciones (`_U()` / `data-trans`) — sin textos sueltos hardcodeados en español directamente en el HTML/JS/CLIENTS/SERVERS que se queden sin traducir al cambiar `Config.Locale` (Incluidos los Prints/Console.logs).
+
+### 18. Seguridad — Validación server-side de todos los datos de creación de personaje
+Ahora mismo la validación de nombre/apellidos/edad/nacionalidad ocurre solo en el frontend (`validators.js`). Un cliente modificado (menú de trainer, NUI editado) podría saltarse esas comprobaciones y mandar directamente el evento `DP-MultiCharacter:server:createCharacter` con datos inválidos o maliciosos. Replicar en `sv_main.lua` las mismas validaciones (longitud de nombre/apellidos, regex de caracteres permitidos, rango de fecha de nacimiento según `Config.MinAge`/`Config.MaxAge`, nacionalidad dentro de `Config.Nationalities`) antes de llamar a `QBCore.Player.Login`, rechazando y logueando el intento si algo no cuadra.
+
+### 19. Seguridad — Rate limiting en acciones sensibles (crear, borrar, reordenar, exportar/importar)
+Añadir un límite de frecuencia por jugador (por ejemplo, con una tabla en memoria `lastActionTimestamp[license]`) para evitar spam/abuso de eventos críticos: crear personajes en bucle, borrar y recrear repetidamente, reordenar sin parar, o generar exportaciones en cadena para intentar fuerza bruta sobre el ID único de importación. Cada acción debe tener su propio cooldown razonable configurable en `config.lua`.
+
+### 20. Seguridad — Anti-duplicación en Importar Personaje
+Cuando se implemente el punto 4, contemplar el caso de que el **mismo código de importación se use varias veces** (por el mismo usuario o por usuarios distintos a la vez, ej. dos personas pegando el código casi simultáneamente). Definir en `config.lua` si un mismo ID de exportación se puede importar una única vez en total, un número limitado de veces, o de forma ilimitada — y aplicarlo con un lock/transacción en `sv_database.lua` para que no se puedan colar dos importaciones simultáneas del mismo código antes de que la primera termine de procesarse.
+
+### 21. UX — Estados de carga (loading) en acciones asíncronas
+Ninguna acción que depende del servidor (crear personaje, borrar, reordenar, exportar/importar cuando existan) muestra actualmente un estado de "cargando" mientras se espera la respuesta de Lua. Añadir spinners/estados deshabilitados en los botones relevantes mientras la petición está en curso, para evitar que el usuario pulse varias veces pensando que no ha funcionado (lo cual además agravaría el punto 19).
+
+### 22. UX — Confirmación visual de guardado en Opciones (toast/notificación)
+Actualmente, acciones como reordenar personajes solo muestran una notificación nativa de QBCore (`QBCore:Notify`) que aparece fuera del propio NUI. Añadir un sistema de notificación "toast" propio dentro de la interfaz (esquina de la pantalla de Opciones) para confirmar visualmente acciones como "Orden guardado", "Volumen guardado", "Personaje exportado", consistente con el estilo visual del resto del script, sin depender de que el jugador vea la notificación nativa del juego.
+
+### 23. Gestión — Marcar personaje como favorito
+El botón "Marcar como favorito" existe visualmente en el roadmap pero no está desarrollado como punto propio. Al marcarlo, ese personaje debe aparecer destacado visualmente en la lista de "Personajes" (por ejemplo con una estrella o borde distinto) y ordenarse primero por defecto en la tabla de Opciones. Guardar el estado de favorito en base de datos (metadata o tabla nueva), asociado al `citizenid`.
+
+### 24. Gestión — Personaje por defecto (independiente del "último usado")
+Actualmente el botón "Continuar con tu historia" siempre carga el personaje con el `cid` más bajo (`plyChars[1]`). Permitir que el jugador fije explícitamente **cuál** quiere que sea su personaje por defecto para ese botón, independientemente de cuál usó por última vez o de su número de slot — guardarlo en base de datos y usarlo en `sv_database.lua` al calcular `lastCharacter`.
+
+### 25. Gestión — Historial de actividad por personaje
+Ampliar el panel de detalle (o la pantalla de Opciones) con un pequeño historial por personaje: fecha de creación, número de veces que se ha jugado (sesiones), y opcionalmente un log simple de eventos relevantes (cambios de trabajo, ingreso/salida de banda). Útil tanto para el jugador como para moderación si hay disputas.
+
+### 26. Administración — Panel de estadísticas globales del servidor (server-side)
+Crear un comando o export pensado para administradores (o integrable en `DP-AdminMenu`) que devuelva estadísticas agregadas del sistema de personajes: número total de personajes activos en el servidor, media de slots usados por jugador, personajes creados en las últimas 24h/7 días, y personajes actualmente en `PROCESO_ELIMINACION` (ver punto 2) pendientes de purga.
+
+### 27. Administración — Log de auditoría de acciones críticas
+Registrar en una tabla propia (`multicharacter_audit_log` o similar) cada acción sensible que ocurra: creación, borrado (y quién lo confirmó), reordenamiento, exportación e importación de personajes — con `license`, `citizenid` afectado, timestamp y tipo de acción. Sirve tanto para depurar problemas reportados por jugadores como para que un admin pueda investigar un caso de abuso o duplicación.
+
+### 28. Rendimiento — Cachear la consulta de `setupCharacters` en servidor
+Cada vez que se abre la UI (`setupCharacters`) se lanza una query completa con `LEFT JOIN` a `playerskins`. Si el jugador entra y sale del selector varias veces seguidas (por ejemplo cancelando creación de personaje), se repite la misma consulta sin necesidad. Añadir una caché en memoria de corta duración (unos segundos) por `license`, invalidándola inmediatamente tras cualquier escritura (crear, borrar, reordenar) para no servir datos desactualizados.
+
+### 29. Rendimiento — Revisar el hilo de densidad de tráfico/peds en `SetupCamera`
+El hilo que fuerza a `0.0` los multiplicadores de densidad de peds/vehículos mientras la cámara del selector está activa se ejecuta en bucle (`CreateThread` sin `Wait` explícito entre iteraciones salvo el implícito). Revisar que tenga un `Wait` razonable (aunque sea 0 o 100ms) para no consumir ciclos de CPU innecesarios del hilo principal del cliente mientras el jugador simplemente está mirando el menú sin interactuar.
+
+### 30. Técnico — Manejo de errores y timeouts en las llamadas `axios.post` del NUI
+Actualmente varias llamadas `axios.post` desde `app.js` no gestionan el caso de que la promesa falle o tarde demasiado (el NUI podría quedarse esperando indefinidamente una respuesta que nunca llega, por ejemplo si el recurso Lua se reinicia a mitad de una petición). Añadir un `.catch()` consistente en todas las llamadas relevantes, con un timeout razonable y un mensaje de error visible en la UI en vez de fallar en silencio, para que la interfaz nunca se quede "colgada" esperando al servidor.
