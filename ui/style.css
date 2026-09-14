@@ -1074,6 +1074,191 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     transform: translateY(-2px);
 }
 
+/* ==========================================================================
+   MODAL EXPORTAR / IMPORTAR PERSONAJE
+   Modal único reusable con selector de formato (JSON/XML) a la izquierda
+   y panel de código (export) o textarea (import) a la derecha.
+   ========================================================================== */
+
+/* Variante ancha del modal base, para dar espacio a las dos columnas */
+.modal-content-wide {
+    width: 720px;
+    max-width: 92vw;
+}
+
+.expimp-panel {
+    display: flex;
+    gap: 20px;
+    text-align: left;
+    width: 100%;
+    min-height: 280px;
+}
+
+/* --- Columna izquierda: selector de formato --- */
+.expimp-col-left {
+    flex: 0 0 160px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.expimp-col-label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #999999;
+}
+
+/* Toggle tipo pestañas, apiladas en vertical (una encima de otra) */
+.expimp-format-toggle {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 6px;
+}
+
+.expimp-format-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #999999;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.expimp-format-btn i {
+    font-size: 14px;
+}
+
+.expimp-format-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+}
+
+.expimp-format-btn.active {
+    background: #ffffff;
+    color: #000000;
+    border-color: #ffffff;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.25);
+}
+
+/* --- Columna derecha: código generado (export) o textarea (import) --- */
+.expimp-col-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    /* evita que el <pre> con contenido largo reviente el layout */
+}
+
+.expimp-output-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.expimp-copy-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    color: #999999;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.expimp-copy-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.expimp-copy-btn.copied {
+    background: rgba(255, 255, 255, 0.9);
+    color: #000000;
+    border-color: #ffffff;
+}
+
+/* Bloque de código de solo lectura (modo Export) */
+.expimp-output-code {
+    flex: 1;
+    margin: 0;
+    padding: 14px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #cccccc;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.expimp-output-code code {
+    color: #cccccc;
+    font-family: inherit;
+}
+
+/* Textarea para pegar código (modo Import) */
+.expimp-output-textarea {
+    flex: 1;
+    width: 100%;
+    padding: 14px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #ffffff;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.expimp-output-textarea:focus {
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.expimp-output-textarea::placeholder {
+    color: #666666;
+}
+
+/* En pantallas estrechas, apilar las columnas en vertical */
+@media (max-width: 640px) {
+    .expimp-panel {
+        flex-direction: column;
+    }
+
+    .expimp-col-left {
+        flex: none;
+    }
+
+    .expimp-format-toggle {
+        flex-direction: row;
+    }
+}
+
 /* === REFLEJO INFERIOR: REPLICA EXACTA EXPANDIDA HASTA EL FONDO === */
 .landing-reflection-container {
     position: absolute;
@@ -2101,7 +2286,7 @@ sidebar-block:nth-child(1) {
 .search-box input:focus {
     border-color: rgba(255, 255, 255, 0.3);
     background: rgba(0, 0, 0, 0.7);
-    width: 260px;
+    width: 350px;
 }
 
 .search-box:focus-within i {

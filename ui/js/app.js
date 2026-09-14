@@ -15,6 +15,7 @@ let lastCharacter = null;
 let minAge = 18; // Comodín inicial de seguridad (Se machaca con el Config al abrir)
 let maxAge = 100; // Comodín inicial de seguridad (Se machaca con el Config al abrir)
 let flatpickrInstance = null; // Referencia global a la instancia del datepicker para poder recalcularla si cambian minAge/maxAge
+let interfaceVolume = 100; // Volumen (0-100) de los sonidos de interfaz; se carga de localStorage al iniciar
 let randomSlotGenders = {}; // Variable para guardar los géneros
 
 // ==========================================
@@ -88,6 +89,13 @@ function applyAgeLimitsToFlatpickr(instance) {
 
 document.addEventListener('DOMContentLoaded', () => {
     DebugPrint("DOM cargado. Inicializando eventos principales de la interfaz.");
+
+    // Cargar el volumen de interfaz guardado (localStorage por ahora; ver saveInterfaceVolume)
+    const storedVolume = localStorage.getItem('dpmc_interface_volume');
+    if (storedVolume !== null) {
+        const parsedVolume = parseInt(storedVolume);
+        if (!isNaN(parsedVolume)) interfaceVolume = Math.max(0, Math.min(100, parsedVolume));
+    }
 
     const MONTH_NAMES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
@@ -1042,7 +1050,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     e.stopPropagation();
                     DebugPrint("Exportar personaje CID: " + char.cid);
                     if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                    alert("Próximamente disponible");
+                    openExportImportModal('export', char);
                 });
 
                 tr.querySelector('.btn-delete-char').addEventListener('click', (e) => {
@@ -1347,18 +1355,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p style="margin-bottom:0;">No se han encontrado personajes eliminados en los últimos 30 días.</p>
             </div>`,
 
-            'modal-export-char': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
-                <p style="font-size: 13px; margin-bottom: 10px; margin-top:0;">Se generará un archivo encriptado <strong>.xmt</strong> en tus documentos con la progresión actual de tu personaje.</p>
-                <div style="background: rgba(255, 255, 255, 0.05); padding: 8px; border-radius: 4px; font-family: monospace; font-size: 11px;">
-                    UID95316_backup_2025.xmt
-                </div>
-            </div>`,
-
-            'modal-import-char': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
-                <p style="margin-bottom: 8px; font-size: 12px; margin-top:0;">Pega tu clave de recuperación:</p>
-                <textarea style="width: 100%; height: 60px; padding: 10px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; outline: none; resize: none; font-family: monospace;" placeholder="Ej: DP-CHAR-XXXX-XXXX-XXXX..."></textarea>
-            </div>`,
-
             'modal-spawn-pref': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px 0;">
                     <input type="radio" name="spawn_type" checked style="accent-color: #fff; transform: scale(1.2);"> 
@@ -1379,14 +1375,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <span>Oculto</span>
                 </div>
-            </div>`,
-
-            'modal-sound-toggle': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                    <span>Volumen de Interfaz</span>
-                    <strong style="color: #fff;">100%</strong>
-                </div>
-                <input type="range" min="0" max="100" value="100" style="width: 100%; accent-color: #fff; cursor: pointer;">
             </div>`,
 
             'modal-report-bug': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
@@ -1417,11 +1405,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const modalBindings = {
             'btn-buy-slot': 'modal-buy-slots',
             'btn-restore-char': 'modal-restore-char',
-            'btn-export-char': 'modal-export-char',
-            'btn-import-char': 'modal-import-char',
             'btn-spawn-pref': 'modal-spawn-pref',
             'btn-hide-locked': 'modal-hide-locked',
-            'btn-sound-toggle': 'modal-sound-toggle',
             'btn-report-bug': 'modal-report-bug',
             'btn-discord': 'modal-discord'
         };
@@ -1452,8 +1437,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Si es el de borrado, saltamos los botones porque tiene su lógica arriba
-            if (modal.id === 'delete-modal') return;
+            // Si es el de borrado, exportar/importar o sonidos, saltamos los botones porque tienen lógica propia
+            if (modal.id === 'delete-modal' || modal.id === 'modal-export-import' || modal.id === 'modal-sound-toggle') return;
 
             // Funciones de botones cancelar / confirmar genéricas para las DEMOS
             const closeBtns = modal.querySelectorAll('.btn-modal-cancel, .btn-modal-primary');
@@ -1469,6 +1454,234 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
         });
+
+        // ==========================================
+        // 🔊 SONIDOS DE INTERFAZ (Volumen)
+        // ==========================================
+        // Por ahora el volumen se guarda en localStorage (solo-UI). Cuando se conecte
+        // con Lua, saveInterfaceVolume() es el único punto que habrá que tocar para
+        // mandar también el valor a cl_events.lua vía axios.post (KVP persistente real).
+        const VOLUME_STORAGE_KEY = 'dpmc_interface_volume';
+
+        function loadInterfaceVolume() {
+            const stored = localStorage.getItem(VOLUME_STORAGE_KEY);
+            const value = stored !== null ? parseInt(stored) : 100;
+            return isNaN(value) ? 100 : Math.max(0, Math.min(100, value));
+        }
+
+        function saveInterfaceVolume(value) {
+            interfaceVolume = value;
+            localStorage.setItem(VOLUME_STORAGE_KEY, String(value));
+            DebugPrint("Volumen de interfaz guardado: " + value + "%");
+            // TODO (pendiente de cl_events.lua): persistir también vía KVP en Lua.
+            // axios.post(`https://${resName}/setInterfaceVolume`, JSON.stringify({ volume: value }));
+        }
+
+        const soundToggleBtn = document.getElementById('btn-sound-toggle');
+        const soundModal = document.getElementById('modal-sound-toggle');
+        const soundSlider = document.getElementById('sound-volume-slider');
+        const soundValueLabel = document.getElementById('sound-volume-value');
+        const soundSaveBtn = document.getElementById('btn-sound-save');
+        const soundCancelBtn = document.getElementById('btn-sound-cancel');
+
+        if (soundToggleBtn && soundModal && soundSlider) {
+            soundToggleBtn.addEventListener('click', () => {
+                DebugPrint("Abriendo modal de Sonidos de Interfaz.");
+                soundSlider.value = interfaceVolume;
+                soundValueLabel.innerText = interfaceVolume + '%';
+                soundModal.style.display = "flex";
+                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+            });
+
+            // Actualiza el % en vivo mientras se arrastra el slider (sin guardar todavía)
+            soundSlider.addEventListener('input', () => {
+                soundValueLabel.innerText = soundSlider.value + '%';
+            });
+
+            // Sonido de prueba al soltar el slider, para que el usuario escuche el volumen elegido
+            soundSlider.addEventListener('change', () => {
+                if (typeof Sounds !== 'undefined') Sounds.playNav();
+            });
+
+            if (soundSaveBtn) {
+                soundSaveBtn.addEventListener('click', () => {
+                    saveInterfaceVolume(parseInt(soundSlider.value));
+                    soundModal.style.display = "none";
+                    if (typeof Sounds !== 'undefined') Sounds.playSelect();
+                });
+            }
+
+            if (soundCancelBtn) {
+                soundCancelBtn.addEventListener('click', () => {
+                    soundModal.style.display = "none";
+                    if (typeof Sounds !== 'undefined') Sounds.playCancel();
+                });
+            }
+        }
+
+        // ==========================================
+        // 📤📥 EXPORTAR / IMPORTAR PERSONAJE
+        // ==========================================
+        const expimpModal = document.getElementById('modal-export-import');
+        const expimpIcon = document.getElementById('expimp-icon');
+        const expimpTitle = document.getElementById('expimp-title');
+        const expimpSubtitle = document.getElementById('expimp-subtitle');
+        const expimpConfirmBtn = document.getElementById('expimp-confirm-btn');
+        const expimpOutputLabel = document.getElementById('expimp-output-label');
+        const expimpCodeBlock = document.getElementById('expimp-output-code');
+        const expimpCodeContent = document.getElementById('expimp-output-code-content');
+        const expimpTextarea = document.getElementById('expimp-output-textarea');
+        const expimpCopyBtn = document.getElementById('expimp-copy-btn');
+        const expimpFormatBtns = expimpModal ? expimpModal.querySelectorAll('.expimp-format-btn') : [];
+
+        let expimpCurrentFormat = 'json'; // 'json' | 'xml'
+        let expimpCurrentCharData = null; // Personaje sobre el que se está exportando (null en modo import)
+
+        // Genera el texto de ejemplo/placeholder para el bloque de código en modo Export.
+        // Cuando exista la lógica real de Lua, esta función es el único punto a sustituir
+        // por el JSON/XML real que devuelva el servidor para ese personaje.
+        function buildExportPreview(format, charData) {
+            const cid = charData ? charData.cid : '?';
+            const citizenid = charData ? (charData.citizenid || '---') : '---';
+            const fullName = charData && charData.charinfo
+                ? `${charData.charinfo.firstname || ''} ${charData.charinfo.lastname || ''}`.trim()
+                : 'Personaje';
+
+            if (format === 'xml') {
+                return `<?xml version="1.0" encoding="UTF-8"?>\n<character>\n    <cid>${cid}</cid>\n    <citizenid>${citizenid}</citizenid>\n    <name>${fullName}</name>\n</character>`;
+            }
+
+            return JSON.stringify({
+                cid: cid,
+                citizenid: citizenid,
+                name: fullName
+            }, null, 4);
+        }
+
+        // Actualiza el panel derecho según el modo (export/import) y el formato elegido
+        function refreshExpimpOutput() {
+            const mode = expimpModal.dataset.mode;
+
+            if (mode === 'export') {
+                expimpCodeBlock.style.display = 'block';
+                expimpTextarea.style.display = 'none';
+                expimpOutputLabel.innerText = 'Código generado';
+                expimpCodeContent.textContent = buildExportPreview(expimpCurrentFormat, expimpCurrentCharData);
+            } else {
+                expimpCodeBlock.style.display = 'none';
+                expimpTextarea.style.display = 'block';
+                expimpOutputLabel.innerText = 'Pegar código';
+                expimpTextarea.placeholder = expimpCurrentFormat === 'xml'
+                    ? 'Pega aquí tu código XML...'
+                    : 'Pega aquí tu código JSON...';
+            }
+        }
+
+        // Abre el modal en el modo indicado ('export' o 'import').
+        // charData es opcional: si se abre desde la fila de un personaje concreto en la
+        // tabla, se usa para generar la vista previa de export con sus datos reales.
+        function openExportImportModal(mode, charData) {
+            if (!expimpModal) return;
+            expimpModal.dataset.mode = mode;
+            expimpCurrentCharData = charData || null;
+            expimpCurrentFormat = 'json';
+
+            // Resetear el toggle de formato a JSON por defecto cada vez que se abre
+            expimpFormatBtns.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.format === 'json');
+            });
+
+            if (mode === 'export') {
+                expimpIcon.className = 'fas fa-file-export modal-icon';
+                expimpTitle.innerText = 'EXPORTAR PERSONAJE';
+                expimpSubtitle.innerText = 'Guarda un backup individual.';
+                expimpConfirmBtn.innerHTML = '<i class="fas fa-check"></i> EXPORTAR';
+                expimpTextarea.value = '';
+            } else {
+                expimpIcon.className = 'fas fa-file-import modal-icon';
+                expimpTitle.innerText = 'IMPORTAR PERSONAJE';
+                expimpSubtitle.innerText = 'Restaura un backup previo.';
+                expimpConfirmBtn.innerHTML = '<i class="fas fa-check"></i> IMPORTAR';
+            }
+
+            refreshExpimpOutput();
+            expimpModal.style.display = 'flex';
+            if (typeof Sounds !== 'undefined') Sounds.playSelect();
+        }
+
+        // Botón del sidebar: "Exportar Personaje" (sin personaje concreto asociado)
+        const btnExportSidebar = document.getElementById('btn-export-char');
+        if (btnExportSidebar) {
+            btnExportSidebar.addEventListener('click', () => openExportImportModal('export', lastCharacter));
+        }
+
+        // Botón del sidebar: "Importar Personaje"
+        const btnImportSidebar = document.getElementById('btn-import-char');
+        if (btnImportSidebar) {
+            btnImportSidebar.addEventListener('click', () => openExportImportModal('import', null));
+        }
+
+        // Toggle de formato JSON/XML
+        expimpFormatBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                expimpCurrentFormat = btn.dataset.format;
+                expimpFormatBtns.forEach(b => b.classList.toggle('active', b === btn));
+                refreshExpimpOutput();
+                if (typeof Sounds !== 'undefined') Sounds.playNav();
+            });
+        });
+
+        // Botón de copiar el código generado (solo tiene sentido en modo Export)
+        if (expimpCopyBtn) {
+            expimpCopyBtn.addEventListener('click', () => {
+                const textToCopy = expimpModal.dataset.mode === 'export'
+                    ? expimpCodeContent.textContent
+                    : expimpTextarea.value;
+
+                if (!textToCopy) return;
+
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    expimpCopyBtn.classList.add('copied');
+                    expimpCopyBtn.innerHTML = '<i class="fas fa-check"></i>';
+                    setTimeout(() => {
+                        expimpCopyBtn.classList.remove('copied');
+                        expimpCopyBtn.innerHTML = '<i class="fas fa-copy"></i>';
+                    }, 1200);
+                    if (typeof Sounds !== 'undefined') Sounds.playSelect();
+                }).catch(() => {
+                    DebugPrint("No se pudo copiar al portapapeles.");
+                });
+            });
+        }
+
+        // Cierre (botón "CERRAR")
+        if (expimpModal) {
+            const expimpCancelBtn = expimpModal.querySelector('.btn-modal-cancel');
+            if (expimpCancelBtn) {
+                expimpCancelBtn.addEventListener('click', () => {
+                    expimpModal.style.display = 'none';
+                    if (typeof Sounds !== 'undefined') Sounds.playCancel();
+                });
+            }
+
+            // Confirmar (Exportar / Importar). Por ahora solo demo/placeholder:
+            // aquí es donde, al conectar con Lua, se mandará axios.post con el
+            // JSON/XML generado (export) o el contenido pegado (import).
+            expimpConfirmBtn.addEventListener('click', () => {
+                const mode = expimpModal.dataset.mode;
+                if (mode === 'export') {
+                    DebugPrint("Confirmar exportación en formato " + expimpCurrentFormat + " (demo, aún sin conectar a Lua).");
+                } else {
+                    if (!expimpTextarea.value.trim()) {
+                        DebugPrint("Intento de importar sin pegar ningún código.");
+                        return;
+                    }
+                    DebugPrint("Confirmar importación en formato " + expimpCurrentFormat + " (demo, aún sin conectar a Lua).");
+                }
+                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+                expimpModal.style.display = 'none';
+            });
+        }
     })();
 });
 

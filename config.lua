@@ -14,8 +14,6 @@ Configura tu lenguaje usando el código de idioma correspondiente. Por ejemplo:
 
 Config.Locale = 'es'
 
-Config.ServerName = 'Servidor de Prueba' -- Nombre del servidor que se mostrará en la pantalla cinematica al seleccionar un personaje para jugar
-
 Config.EnableDeleteButton = true -- ¿Permitir a los jugadores borrar a sus personajes?
 
 Config.DefaultSlots = 2 -- Personajes gratuitos para todos los usuarios (mínimo: 1, máximo: 7)
@@ -54,18 +52,6 @@ Config.PedSpacing = 1.15
 -- Cámara más cerca, a la altura del pecho y centrada
 Config.CamCoords = vector4(-1078.20, -74.83, -99.0, 90.0)
 
-Config.CharactersAnimations = false -- Si es true, los personajes tendrán animaciones mientras están en la pantalla de selección de personajes. Si es false, los personajes estarán quietos.
-
-Config.CharactersAnimation = {
-    idle = {
-        dict = "random@streer_race",
-        name = "_car_b_lookout"
-    },
-    select = {
-        dict = "anim@heists@ornate_bank@hostages@hit",
-        name = "hit_loop_ped_b"
-    }
-}
 
 Config.SpawnPoints = {
     SkipSelection = true, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos
