@@ -12,6 +12,24 @@ local function DebugPrint(msg)
 end
 
 -- ==========================================
+-- 🗄️ CREACIÓN DE TABLAS (IDEMPOTENTE)
+-- ==========================================
+-- Tabla de preferencias de interfaz por jugador (se usa para persistir en BD
+-- el volumen de sonidos de interfaz, y en el futuro otras preferencias UI).
+-- Se crea automáticamente si no existe; no requiere migración manual.
+CreateThread(function()
+    MySQL.query.await([[
+        CREATE TABLE IF NOT EXISTS `dp_multicharacter_settings` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `license` VARCHAR(50) NOT NULL UNIQUE,
+            `interface_volume` INT NOT NULL DEFAULT 100,
+            `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ]], {})
+    DebugPrint("Tabla dp_multicharacter_settings verificada/creada correctamente.")
+end)
+
+-- ==========================================
 -- 🗄️ CONSULTAS Y GESTIÓN DE BASE DE DATOS
 -- ==========================================
 -- Callback para solicitar la información de todos los personajes del jugador al abrir el menú
@@ -19,6 +37,7 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', func
     local license = QBCore.Functions.GetIdentifier(source, 'license')
     DebugPrint("Solicitando personajes para la licencia: " .. tostring(license))
     local plyChars = {}
+    local trashedCount = 0 -- Nº de personajes en PROCESO_ELIMINACION (papelera): ocupan slot pero no se listan
 
     -- Determinamos la cantidad de slots permitidos
     local maxSlots = Config.DefaultSlots
@@ -60,18 +79,25 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', func
                     DebugPrint("Eliminando físicamente personaje previamente marcado como borrado (CitizenID: " ..
                                    tostring(result[i].citizenid) .. ")")
                     MySQL.query.await('DELETE FROM `players` WHERE citizenid = ?', {result[i].citizenid})
+                elseif result[i].metadata and result[i].metadata.PROCESO_ELIMINACION then
+                    -- Personaje en la "papelera" (ver Restaurar Personaje): NO se muestra en la
+                    -- lista normal de personajes, pero su slot sigue contando como ocupado, así
+                    -- que se guarda aparte para restarlo de los slots libres sin pintarlo en la UI.
+                    DebugPrint("Personaje en PROCESO_ELIMINACION omitido de la lista (CitizenID: " ..
+                                   tostring(result[i].citizenid) .. "), pero su slot sigue bloqueado.")
+                    trashedCount = trashedCount + 1
                 else
                     plyChars[#plyChars + 1] = result[i]
                 end
             end
 
-            DebugPrint("Enviando datos procesados de los personajes al cliente.")
-            cb(plyChars, maxSlots, plyChars[1])
+            DebugPrint("Enviando datos procesados de los personajes al cliente. En papelera: " .. tostring(trashedCount))
+            cb(plyChars, maxSlots, plyChars[1], trashedCount)
         end)
 end)
 
 -- ==========================================
--- 🗑️ BORRADO DE PERSONAJE (A PRUEBA DE FALLOS)
+-- 🗑️ BORRADO DE PERSONAJE (PAPELERA CON VENTANA DE RESTAURACIÓN)
 -- ==========================================
 -- Definimos aquí la lista de tablas que intenta borrar qb-core con
 -- "DELETE ... WHERE citizenid = ?", para replicarla pero de forma segura.
@@ -92,45 +118,14 @@ local function TableSupportsCitizenId(tabla)
     return tonumber(res[1].total) > 0
 end
 
--- Evento para eliminar definitivamente un personaje de la base de datos
--- (Usamos callback para que el cliente sepa CUÁNDO termina el borrado
---  y refresque la lista al instante, sin tener que recargar la UI)
-QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', function(source, cb, citizenid)
-    local src = source
-    DebugPrint("Solicitud de eliminación de personaje recibida. CitizenID: " .. tostring(citizenid))
-
-    -- Verificamos si el botón de borrado está habilitado en la configuración
-    if not Config.EnableDeleteButton then
-        DebugPrint("El borrado de personajes está desactivado. Cancelando acción.")
-        cb(false)
-        return
-    end
-
-    if not citizenid or citizenid == '' then
-        DebugPrint("ERROR: CitizenID vacío. No se puede borrar el personaje.")
-        TriggerClientEvent('QBCore:Notify', src, "No se pudo borrar el personaje (CitizenID vacío)", "error")
-        cb(false)
-        return
-    end
-
-    -- Seguridad: comprobamos que el personaje pertenezca realmente al jugador
-    -- (misma comprobación que hace QBCore.Player.DeleteCharacter)
-    local license = QBCore.Functions.GetIdentifier(src, 'license')
-    local ownerLicense = MySQL.scalar.await('SELECT license FROM players WHERE citizenid = ?', {citizenid})
-
-    if not ownerLicense or ownerLicense ~= license then
-        DebugPrint("ERROR: El personaje no pertenece a este jugador o no existe. CitizenID: " .. tostring(citizenid))
-        TriggerClientEvent('QBCore:Notify', src, "No se pudo borrar el personaje", "error")
-        cb(false)
-        return
-    end
-
-    DebugPrint("Verificación de propiedad OK. Procediendo con el borrado.")
-
-    -- 1) HARD DELETE en las tablas relacionadas, UNA A UNA (sin transacción suicida):
-    --    si alguna falla, el resto se completa igual y avisamos del fallo concreto.
-    --    (El borrado físico en `players` se hace al final, en el paso 5.)
+-- Hard delete REAL y definitivo de un personaje y todos sus datos relacionados.
+-- Extraído a función reutilizable: la usa tanto la purga automática (tras Config.RestoreWindowDays)
+-- como cualquier borrado directo sin papelera que se necesite en el futuro. Devuelve la lista de
+-- tablas que fallaron al limpiar (vacía si todo fue bien).
+function HardDeleteCharacterFully(citizenid, src)
     local errors = {}
+
+    -- 1) Tablas relacionadas, una a una (si alguna falla, el resto se completa igual)
     for _, tabla in ipairs(DELETE_TABLES) do
         if TableSupportsCitizenId(tabla) then
             local ok, err = pcall(function()
@@ -147,7 +142,7 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', func
         end
     end
 
-    -- 3) Limpieza del inventario de DP-Inventory (usa 'identifier' en vez de 'citizenid')
+    -- 2) Inventario de DP-Inventory (usa 'identifier' en vez de 'citizenid')
     local invOk, invErr = pcall(function()
         MySQL.query.await('DELETE FROM `inventories` WHERE identifier = ?', {citizenid})
     end)
@@ -156,7 +151,7 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', func
         errors[#errors + 1] = 'inventories'
     end
 
-    -- 4) Limpieza de tablas del teléfono que usan device_id (relacionado con citizenid vía metadata)
+    -- 3) Tablas del teléfono que usan device_id
     local phoneTables = {'phone_messages', 'phone_gallery', 'phone_note', 'phone_bleets'}
     for _, tabla in ipairs(phoneTables) do
         local ok, err = pcall(function()
@@ -167,8 +162,7 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', func
         end
     end
 
-    -- 5) HARD DELETE REAL del personaje en la tabla `players`
-    --    (esto es lo que elimina la fila de la base de datos de verdad)
+    -- 4) HARD DELETE REAL del personaje en `players`
     local delOk, delErr = pcall(function()
         MySQL.query.await('DELETE FROM `players` WHERE citizenid = ?', {citizenid})
     end)
@@ -180,18 +174,87 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', func
                        ")")
     end
 
-    -- 6) Si el personaje borrado estaba cargado en memoria (Player object activo con ese citizenid),
-    --    lo limpiamos de QBCore SIN pasar por Logout() ni por Save().
-    --    Motivo: tanto player.Functions.Logout() como QBCore.Player.Logout() ejecutan internamente
-    --    player.Functions.Save() ANTES de limpiar la sesión (así lo hace qb-core de fábrica). Ese guardado
-    --    vuelve a escribir en `players` la fila que acabamos de eliminar, "resucitando" al personaje.
-    --    Por eso antes hacía falta pulsar borrar 2 veces: la 1ª vez se borraba y el Save() del Logout lo
-    --    devolvía; la 2ª vez ya no quedaba ningún Player en memoria que lo resucitara.
-    --    Para evitarlo, limpiamos las tablas internas de QBCore directamente, sin invocar ningún Save()
-    --    (con pcall por seguridad, por si algún fork de QBCore no expone esas tablas con ese nombre).
+    -- 5) Si el personaje estaba cargado en memoria, limpiar SIN pasar por Logout()/Save()
+    --    (Save() reinsertaría la fila que acabamos de borrar, "resucitando" al personaje).
+    if src then
+        local player = QBCore.Functions.GetPlayer(src)
+        if player and player.PlayerData and player.PlayerData.citizenid == citizenid then
+            DebugPrint("  → Limpiando sesión en memoria del personaje borrado (sin guardar, para no resucitarlo).")
+            TriggerClientEvent('QBCore:Client:OnPlayerUnload', src)
+            TriggerEvent('QBCore:Server:OnPlayerUnload', src)
+            pcall(function()
+                if QBCore.Players then
+                    QBCore.Players[src] = nil
+                end
+                if QBCore.PlayersByCitizenId then
+                    QBCore.PlayersByCitizenId[citizenid] = nil
+                end
+            end)
+        end
+    end
+
+    return errors
+end
+
+-- Evento para MOVER un personaje a la papelera (soft delete con ventana de recuperación).
+-- Ya NO borra nada físicamente: solo marca el personaje con metadata.PROCESO_ELIMINACION
+-- (timestamp del borrado). El hard delete real solo ocurre pasados Config.RestoreWindowDays,
+-- vía el hilo de purga automática definido más abajo.
+QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', function(source, cb, citizenid)
+    local src = source
+    DebugPrint("Solicitud de eliminación (a papelera) de personaje recibida. CitizenID: " .. tostring(citizenid))
+
+    if not Config.EnableDeleteButton then
+        DebugPrint("El borrado de personajes está desactivado. Cancelando acción.")
+        cb(false)
+        return
+    end
+
+    if not citizenid or citizenid == '' then
+        DebugPrint("ERROR: CitizenID vacío. No se puede borrar el personaje.")
+        TriggerClientEvent('QBCore:Notify', src, "No se pudo borrar el personaje (CitizenID vacío)", "error")
+        cb(false)
+        return
+    end
+
+    -- Seguridad: comprobamos que el personaje pertenezca realmente al jugador
+    local license = QBCore.Functions.GetIdentifier(src, 'license')
+    local row = MySQL.query.await('SELECT license, metadata FROM players WHERE citizenid = ?', {citizenid})
+    local ownerRow = row and row[1]
+
+    if not ownerRow or ownerRow.license ~= license then
+        DebugPrint("ERROR: El personaje no pertenece a este jugador o no existe. CitizenID: " .. tostring(citizenid))
+        TriggerClientEvent('QBCore:Notify', src, "No se pudo borrar el personaje", "error")
+        cb(false)
+        return
+    end
+
+    DebugPrint("Verificación de propiedad OK. Moviendo el personaje a la papelera.")
+
+    -- Decodificamos el metadata actual, le añadimos la marca de papelera, y lo reescribimos
+    local metadata = {}
+    local ok, decoded = pcall(json.decode, ownerRow.metadata)
+    if ok and type(decoded) == 'table' then
+        metadata = decoded
+    end
+    metadata.PROCESO_ELIMINACION = os.time() -- Timestamp UNIX del momento del borrado
+
+    local updOk, updErr = pcall(function()
+        MySQL.update.await('UPDATE players SET metadata = ? WHERE citizenid = ?', {json.encode(metadata), citizenid})
+    end)
+
+    if not updOk then
+        DebugPrint("  ⚠ ERROR marcando el personaje como PROCESO_ELIMINACION: " .. tostring(updErr))
+        TriggerClientEvent('QBCore:Notify', src, "No se pudo borrar el personaje", "error")
+        cb(false)
+        return
+    end
+
+    -- Igual que antes: si el personaje estaba cargado en memoria, lo limpiamos sin Save()
+    -- para que no se reescriban datos viejos encima del metadata que acabamos de actualizar.
     local player = QBCore.Functions.GetPlayer(src)
     if player and player.PlayerData and player.PlayerData.citizenid == citizenid then
-        DebugPrint("  → Limpiando sesión en memoria del personaje borrado (sin guardar, para no resucitarlo).")
+        DebugPrint("  → Limpiando sesión en memoria del personaje movido a papelera (sin guardar).")
         TriggerClientEvent('QBCore:Client:OnPlayerUnload', src)
         TriggerEvent('QBCore:Server:OnPlayerUnload', src)
         pcall(function()
@@ -204,16 +267,139 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', func
         end)
     end
 
-    if #errors == 0 then
-        DebugPrint("Personaje eliminado exitosamente (CitizenID: " .. tostring(citizenid) .. ")")
-        TriggerClientEvent('QBCore:Notify', src, "Personaje eliminado correctamente", "success")
-    else
-        DebugPrint("Personaje eliminado con errores parciales: " .. table.concat(errors, ", "))
-        TriggerClientEvent('QBCore:Notify', src,
-            "Personaje eliminado, pero hubo errores en: " .. table.concat(errors, ", "), "error")
-    end
+    DebugPrint("Personaje movido a la papelera correctamente (CitizenID: " .. tostring(citizenid) ..
+                   "). Días de margen: " .. tostring(Config.RestoreWindowDays))
+    TriggerClientEvent('QBCore:Notify', src, "Personaje eliminado. Puedes restaurarlo en los próximos " ..
+        tostring(Config.RestoreWindowDays) .. " días.", "success")
 
     cb(true)
+end)
+
+-- ==========================================
+-- ♻️ RESTAURAR PERSONAJE (Papelera)
+-- ==========================================
+-- Callback: devuelve los personajes del jugador que están en la papelera y AÚN dentro
+-- del plazo de recuperación, con los días restantes ya calculados.
+QBCore.Functions.CreateCallback('DP-MultiCharacter:server:getDeletedCharacters', function(source, cb)
+    local src = source
+    local license = QBCore.Functions.GetIdentifier(src, 'license')
+    DebugPrint("Solicitando personajes en papelera para la licencia: " .. tostring(license))
+
+    local result = MySQL.query.await('SELECT * FROM players WHERE license = ?', {license})
+    local deletedChars = {}
+    local windowSeconds = (Config.RestoreWindowDays or 5) * 86400
+
+    for i = 1, #result do
+        local ok, metadata = pcall(json.decode, result[i].metadata)
+        if ok and type(metadata) == 'table' and metadata.PROCESO_ELIMINACION then
+            local deletedAt = tonumber(metadata.PROCESO_ELIMINACION) or 0
+            local elapsed = os.time() - deletedAt
+            local remainingSeconds = windowSeconds - elapsed
+
+            if remainingSeconds > 0 then
+                result[i].charinfo = json.decode(result[i].charinfo)
+                result[i].deletedAt = deletedAt
+                result[i].daysRemaining = math.ceil(remainingSeconds / 86400)
+                deletedChars[#deletedChars + 1] = result[i]
+            end
+            -- Si remainingSeconds <= 0, ya debería estar purgado por el hilo automático;
+            -- lo omitimos aquí también por seguridad (no se muestra como restaurable).
+        end
+    end
+
+    DebugPrint("Personajes en papelera encontrados (dentro de plazo): " .. tostring(#deletedChars))
+    cb(deletedChars)
+end)
+
+-- Evento: restaura un personaje desde la papelera (quita la marca PROCESO_ELIMINACION),
+-- siempre que siga dentro del plazo y pertenezca al jugador que lo solicita.
+RegisterNetEvent('DP-MultiCharacter:server:restoreCharacter', function(citizenid)
+    local src = source
+    DebugPrint("Solicitud de restauración de personaje recibida. CitizenID: " .. tostring(citizenid))
+
+    if not citizenid or citizenid == '' then
+        return
+    end
+
+    local license = QBCore.Functions.GetIdentifier(src, 'license')
+    local row = MySQL.query.await('SELECT license, metadata FROM players WHERE citizenid = ?', {citizenid})
+    local ownerRow = row and row[1]
+
+    if not ownerRow or ownerRow.license ~= license then
+        DebugPrint("ERROR: Intento de restaurar un personaje que no pertenece a este jugador.")
+        TriggerClientEvent('QBCore:Notify', src, "No se pudo restaurar el personaje", "error")
+        return
+    end
+
+    local ok, metadata = pcall(json.decode, ownerRow.metadata)
+    if not ok or type(metadata) ~= 'table' or not metadata.PROCESO_ELIMINACION then
+        DebugPrint("ERROR: El personaje no está en la papelera.")
+        TriggerClientEvent('QBCore:Notify', src, "Este personaje no está en la papelera", "error")
+        return
+    end
+
+    -- Comprobamos que siga dentro del plazo (por si el hilo de purga no ha pasado todavía
+    -- pero el plazo ya venció técnicamente)
+    local windowSeconds = (Config.RestoreWindowDays or 5) * 86400
+    local elapsed = os.time() - (tonumber(metadata.PROCESO_ELIMINACION) or 0)
+    if elapsed >= windowSeconds then
+        DebugPrint("ERROR: El plazo de restauración para este personaje ya venció.")
+        TriggerClientEvent('QBCore:Notify', src, "El plazo para restaurar este personaje ya venció", "error")
+        return
+    end
+
+    metadata.PROCESO_ELIMINACION = nil
+
+    local updOk, updErr = pcall(function()
+        MySQL.update.await('UPDATE players SET metadata = ? WHERE citizenid = ?', {json.encode(metadata), citizenid})
+    end)
+
+    if not updOk then
+        DebugPrint("  ⚠ ERROR restaurando el personaje: " .. tostring(updErr))
+        TriggerClientEvent('QBCore:Notify', src, "No se pudo restaurar el personaje", "error")
+        return
+    end
+
+    DebugPrint("Personaje restaurado correctamente (CitizenID: " .. tostring(citizenid) .. ")")
+    TriggerClientEvent('QBCore:Notify', src, "Personaje restaurado correctamente", "success")
+    TriggerClientEvent('DP-MultiCharacter:client:reorderDone', src) -- Reutilizamos el mismo aviso de "refresca la lista"
+end)
+
+-- ==========================================
+-- 🧹 PURGA AUTOMÁTICA DE LA PAPELERA (cada 24 horas)
+-- ==========================================
+-- Revisa periódicamente todos los personajes en PROCESO_ELIMINACION cuyo plazo
+-- (Config.RestoreWindowDays) ya venció, y los elimina definitivamente y sin
+-- posibilidad de recuperación mediante HardDeleteCharacterFully.
+CreateThread(function()
+    while true do
+        Wait(24 * 60 * 60 * 1000) -- 24 horas
+
+        DebugPrint("🧹 Iniciando revisión de purga automática de la papelera...")
+
+        local windowSeconds = (Config.RestoreWindowDays or 5) * 86400
+        local ok, result = pcall(MySQL.query.await, 'SELECT citizenid, metadata FROM players', {})
+
+        if ok and result then
+            local purgedCount = 0
+            for i = 1, #result do
+                local decOk, metadata = pcall(json.decode, result[i].metadata)
+                if decOk and type(metadata) == 'table' and metadata.PROCESO_ELIMINACION then
+                    local elapsed = os.time() - (tonumber(metadata.PROCESO_ELIMINACION) or 0)
+                    if elapsed >= windowSeconds then
+                        DebugPrint("  → Purgando definitivamente CitizenID " .. tostring(result[i].citizenid) ..
+                                       " (superó el plazo de " .. tostring(Config.RestoreWindowDays) .. " días).")
+                        HardDeleteCharacterFully(result[i].citizenid, nil)
+                        purgedCount = purgedCount + 1
+                    end
+                end
+            end
+            DebugPrint("🧹 Purga automática completada. Personajes eliminados definitivamente: " ..
+                           tostring(purgedCount))
+        else
+            DebugPrint("⚠ No se pudo ejecutar la revisión de purga automática (error en la consulta).")
+        end
+    end
 end)
 
 -- Callback para obtener la skin de un personaje específico (modelo y ropa)

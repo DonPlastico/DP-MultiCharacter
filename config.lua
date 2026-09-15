@@ -14,16 +14,17 @@ Configura tu lenguaje usando el código de idioma correspondiente. Por ejemplo:
 
 Config.Locale = 'es'
 
+Config.ServerName = 'Servidor de Prueba' -- Nombre del servidor que se mostrará en la pantalla cinematica al seleccionar un personaje para jugar
+
 Config.EnableDeleteButton = true -- ¿Permitir a los jugadores borrar a sus personajes?
 
 Config.DefaultSlots = 2 -- Personajes gratuitos para todos los usuarios (mínimo: 1, máximo: 7)
 
+Config.MinAge = 18 -- Edad mínima que debe tener un personaje para poder crearse (ej: 18 = mayoría de edad legal en España)
+Config.MaxAge = 100 -- Edad máxima que se puede seleccionar para un personaje (a efectos de roleplay, no tiene sentido permitir más)
 -- El selector de año del calendario de "Fecha de nacimiento" se calcula SIEMPRE en base a estos dos valores y a la fecha actual del servidor.
 -- Ejemplo: si hoy es el año 2026 y Config.MinAge = 18, el año más reciente seleccionable será 2008 (2026 - 18).
 -- Si Config.MaxAge = 100, el año más antiguo seleccionable será 1926 (2026 - 100). No hace falta tocar nada más, se recalcula solo cada año.
-
-Config.MinAge = 18 -- Edad mínima que debe tener un personaje para poder crearse (ej: 18 = mayoría de edad legal en España)
-Config.MaxAge = 100 -- Edad máxima que se puede seleccionar para un personaje (a efectos de roleplay, no tiene sentido permitir más)
 
 -- Ranuras VIP por licencia de Rockstar
 Config.CustomSlots = {
@@ -52,6 +53,18 @@ Config.PedSpacing = 1.15
 -- Cámara más cerca, a la altura del pecho y centrada
 Config.CamCoords = vector4(-1078.20, -74.83, -99.0, 90.0)
 
+Config.CharactersAnimations = false -- Si es true, los personajes tendrán animaciones mientras están en la pantalla de selección de personajes. Si es false, los personajes estarán quietos.
+
+Config.CharactersAnimation = {
+    idle = {
+        dict = "random@streer_race",
+        name = "_car_b_lookout"
+    },
+    select = {
+        dict = "anim@heists@ornate_bank@hostages@hit",
+        name = "hit_loop_ped_b"
+    }
+}
 
 Config.SpawnPoints = {
     SkipSelection = true, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos

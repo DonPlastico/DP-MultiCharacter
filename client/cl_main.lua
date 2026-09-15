@@ -61,8 +61,21 @@ function ToggleUI(state)
         nationalities = Config.Nationalities,
         minAge = Config.MinAge or 18, -- 18 por seguridad si falta
         maxAge = Config.MaxAge or 100, -- 100 por seguridad si falta
-        randomGenders = randomSlotGenders
+        randomGenders = randomSlotGenders,
+        hideLocked = GetHideLockedPreference() -- Preferencia persistente "Ocultar Bloqueados"
     })
+
+    -- Al ABRIR la UI, solicitamos el volumen de interfaz persistido en BD y se lo
+    -- reenviamos a la interfaz para que actualice su slider/sonidos con el valor real.
+    if state then
+        QBCore.Functions.TriggerCallback('DP-MultiCharacter:server:getInterfaceVolume', function(volume)
+            SendNUIMessage({
+                action = "toggleUI",
+                state = true,
+                interfaceVolume = volume or 100
+            })
+        end)
+    end
 
     if state then
         -- Ocultar chat al entrar a la selección usando tu evento custom
@@ -261,23 +274,58 @@ end
 -- 🧍‍♂️ GESTIÓN DE PEDS (CREACIÓN Y BORRADO)
 -- ==========================================
 -- Función para generar todos los peds al abrir el menú (tanto reales como sombras)
+-- Si la preferencia "Ocultar Bloqueados" está activa (KVP persistente), los slots
+-- vacíos NO generan sombra. Además, los peds visibles se REPOSICIONAN centrados
+-- como si solo existiera ese número de slots (índice visual 1..N) en lugar de
+-- dejar huecos del grid original (1..maxSlots).
 function SpawnAllPeds(characters, maxSlots)
     DebugPrint("Iniciando SpawnAllPeds para " .. tostring(maxSlots) .. " slots máximos.")
     DeleteAllPeds() -- Limpiamos por seguridad
     activePedCoords = {}
 
+    -- Preferencia persistente del jugador (definida en cl_events.lua)
+    local hideLocked = GetHideLockedPreference()
+
+    -- 1) Construir la lista de "peds visibles" (slots reales que se pintan):
+    --    - Ocupados: siempre visibles
+    --    - Vacíos: visibles solo si NO está "Ocultar Bloqueados"
+    --    - Excepción: si no hay ningún personaje y la preferencia está activa,
+    --      se muestra el slot 1 como sombra para poder crear el primero.
+    local visibleSlots = {}
+    local hasCharacters = #characters > 0
+
     for slot = 1, maxSlots do
         local char = GetCharacterBySlot(characters, slot)
-        local coords = GetCenteredPedCoords(slot, maxSlots)
+        if char then
+            visibleSlots[#visibleSlots + 1] = { slot = slot, char = char }
+        elseif not hideLocked then
+            visibleSlots[#visibleSlots + 1] = { slot = slot, char = nil }
+        elseif not hasCharacters and slot == 1 then
+            visibleSlots[#visibleSlots + 1] = { slot = slot, char = nil }
+        end
+    end
+
+    local totalVisible = #visibleSlots
+    DebugPrint("Peds visibles tras filtro: " .. tostring(totalVisible) .. " (ocultar bloqueados: " ..
+                   tostring(hideLocked) .. ")")
+
+    -- 2) Colocar cada ped visible con coordenadas CENTRADAS según su índice
+    --    visual (1..totalVisible), como si el grid solo tuviera esos slots.
+    for visualIndex, entry in ipairs(visibleSlots) do
+        local slot = entry.slot
+        local char = entry.char
+        local coords = GetCenteredPedCoords(visualIndex, totalVisible)
         activePedCoords[slot] = coords
 
         if char then
             -- Slot ocupado: Cargar el personaje real
-            DebugPrint("Slot " .. tostring(slot) .. " ocupado. Spawneando ped real.")
+            DebugPrint("Slot " .. tostring(slot) .. " ocupado (posición visual " .. visualIndex .. "/" ..
+                           totalVisible .. "). Spawneando ped real.")
             SpawnSinglePed(slot, char.charinfo.gender, char.model, char.skin, coords, false)
         else
-            -- Slot vacío: Cargar la "Sombra"
-            DebugPrint("Slot " .. tostring(slot) .. " vacío. Spawneando ped sombra.")
+            -- Slot vacío visible: Cargar la "Sombra"
+            DebugPrint("Slot " .. tostring(slot) .. " vacío (posición visual " .. visualIndex .. "/" ..
+                           totalVisible .. "). Spawneando ped sombra.")
             local randomGender = randomSlotGenders[tostring(slot)] or 0
             SpawnSinglePed(slot, randomGender, nil, nil, coords, true)
         end

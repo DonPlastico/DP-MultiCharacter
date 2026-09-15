@@ -54,7 +54,18 @@ Locales['it'] = {
     ['char_deleted'] = 'Personaggio eliminato dal database.',
     ['invalid_name'] = 'Il nome o il cognome contiene caratteri non validi.',
     ['profanity_detected'] = 'È stata rilevata una parola non consentita nel tuo nome.',
-    ['loading_data'] = 'Caricamento informazioni giocatore...'
+    ['loading_data'] = 'Caricamento informazioni giocatore...',
+    ['ui_visible'] = 'VISIBILE',
+    ['ui_hidden'] = 'NASCOSTO',
+    ['ui_hide_locked_preview'] = 'Anteprima del selettore',
+    ['ui_hide_locked_switch'] = 'Nascondi slot vuoti',
+    ['ui_hide_locked_hint'] = 'Gli slot vuoti saranno nascosti dal selettore e vedrai solo i tuoi personaggi creati.',
+    ['ui_hide_locked_on'] = 'Solo personaggi creati',
+    ['ui_hide_locked_off'] = 'Slot vuoti fuori dal selettore',
+    ['ui_sound_volume'] = 'Volume interfaccia',
+    ['ui_sound_test'] = 'Prova suono',
+    ['ui_sound_off'] = 'Suoni disattivati',
+    ['ui_sound_level'] = 'Volume al %s%'
 }
 
 DebugPrint("Dizionario italiano ('it') registrato correttamente.")

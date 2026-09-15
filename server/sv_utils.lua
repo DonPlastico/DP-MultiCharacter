@@ -59,3 +59,60 @@ function LoadIntegrations(source, cData)
         DebugPrint("Recurso DP-RealMoney ausente o apagado. Omitiendo integración.")
     end
 end
+
+-- ==========================================
+-- 🔊 VOLUMEN DE INTERFAZ (PERSISTENCIA EN BD POR JUGADOR)
+-- ==========================================
+-- Tabla usada: dp_multicharacter_settings
+--   (id INT AUTO_INCREMENT PRIMARY KEY,
+--    license VARCHAR(50) UNIQUE,
+--    interface_volume INT DEFAULT 100,
+--    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)
+-- La tabla se crea automáticamente al arrancar (ver sv_database.lua).
+-- Nota: se guarda por "license" (no ciudadano) porque es una preferencia de
+-- interfaz del cliente, válida para todos los personajes del mismo jugador.
+
+-- Callback para obtener el volumen de interfaz guardado del jugador (por licencia)
+QBCore.Functions.CreateCallback('DP-MultiCharacter:server:getInterfaceVolume', function(source, cb)
+    local src = source
+    local license = QBCore.Functions.GetIdentifier(src, 'license')
+    if not license then
+        cb(100)
+        return
+    end
+
+    local ok, row = pcall(MySQL.query.await,
+        'SELECT interface_volume FROM dp_multicharacter_settings WHERE license = ?', {license})
+
+    if ok and row and row[1] and row[1].interface_volume ~= nil then
+        local vol = tonumber(row[1].interface_volume) or 100
+        cb(math.max(0, math.min(100, vol)))
+    else
+        cb(100) -- Por defecto, 100%
+    end
+end)
+
+-- Evento para guardar el volumen de interfaz del jugador (UPSERT por licencia)
+RegisterNetEvent('DP-MultiCharacter:server:setInterfaceVolume', function(volume)
+    local src = source
+    local license = QBCore.Functions.GetIdentifier(src, 'license')
+    if not license then return end
+
+    volume = tonumber(volume) or 100
+    volume = math.max(0, math.min(100, volume))
+
+    local ok, err = pcall(function()
+        MySQL.insert.await(
+            'INSERT INTO dp_multicharacter_settings (license, interface_volume, updated_at) ' ..
+            'VALUES (?, ?, NOW()) ' ..
+            'ON DUPLICATE KEY UPDATE interface_volume = VALUES(interface_volume), updated_at = NOW()',
+            {license, volume}
+        )
+    end)
+
+    if ok then
+        DebugPrint("Volumen de interfaz guardado en BD (" .. tostring(license) .. "): " .. tostring(volume) .. "%")
+    else
+        DebugPrint("ERROR guardando volumen de interfaz: " .. tostring(err))
+    end
+end)

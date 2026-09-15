@@ -54,7 +54,18 @@ Locales['fr'] = {
     ['char_deleted'] = 'Personnage supprimé de la base de données.',
     ['invalid_name'] = 'Le prénom ou le nom contient des caractères invalides.',
     ['profanity_detected'] = 'Un mot interdit a été détecté dans votre nom.',
-    ['loading_data'] = 'Chargement des informations du joueur...'
+    ['loading_data'] = 'Chargement des informations du joueur...',
+    ['ui_visible'] = 'VISIBLE',
+    ['ui_hidden'] = 'MASQUÉ',
+    ['ui_hide_locked_preview'] = 'Aperçu du sélecteur',
+    ['ui_hide_locked_switch'] = 'Masquer les emplacements vides',
+    ['ui_hide_locked_hint'] = 'Les emplacements vides seront masqués du sélecteur et vous ne verrez que vos personnages créés.',
+    ['ui_hide_locked_on'] = 'Seuls les personnages créés',
+    ['ui_hide_locked_off'] = 'Emplacements vides hors sélecteur',
+    ['ui_sound_volume'] = 'Volume de l\'interface',
+    ['ui_sound_test'] = 'Tester le son',
+    ['ui_sound_off'] = 'Sons désactivés',
+    ['ui_sound_level'] = 'Volume à %s%'
 }
 
 DebugPrint("Dictionnaire français ('fr') enregistré avec succès.")

@@ -1259,6 +1259,570 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     }
 }
 
+/* ==========================================================================
+   MODAL RESTAURAR PERSONAJE (papelera de reciclaje temporal)
+   ========================================================================== */
+
+/* Estados de carga / vacío (icono + texto centrado) */
+.restore-state-msg {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 40px 15px;
+    color: #999999;
+    font-size: 13px;
+    text-align: center;
+}
+
+.restore-state-msg i {
+    font-size: 26px;
+    opacity: 0.5;
+}
+
+/* Lista de personajes en papelera */
+.restore-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.restore-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.restore-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.restore-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+}
+
+.restore-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    text-align: left;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.restore-row:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.restore-row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.restore-row-name {
+    font-size: 14px;
+    font-weight: 800;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.restore-row-meta {
+    font-size: 11px;
+    color: #999999;
+}
+
+.btn-restore-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: #ffffff;
+    border: 1px solid #ffffff;
+    border-radius: 4px;
+    color: #000000;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+}
+
+.btn-restore-row:hover {
+    background: #d4d4d4;
+    border-color: #d4d4d4;
+    box-shadow: 0 5px 20px rgba(255, 255, 255, 0.35);
+    transform: translateY(-1px);
+}
+
+/* En pantallas estrechas, apilar nombre y botón en vertical */
+@media (max-width: 640px) {
+    .restore-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .btn-restore-row {
+        justify-content: center;
+    }
+}
+
+/* ==========================================================================
+   MODAL OCULTAR BLOQUEADOS — SWITCH CUADRICULADO MONOCROMÁTICO
+   ========================================================================== */
+.hl-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    text-align: left;
+}
+
+/* --- Zona de vista previa (simula la fila de slots del selector) --- */
+.hl-preview {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 14px;
+}
+
+.hl-preview-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 12px;
+}
+
+.hl-slot-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+.hl-slot {
+    width: 74px;
+    height: 74px;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.hl-slot-occupied {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.hl-slot-user {
+    font-size: 16px;
+    color: #ffffff;
+    opacity: 0.9;
+}
+
+.hl-slot-name {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Slot vacío: visible por defecto, se colapsa cuando el switch está activo */
+.hl-slot-locked {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed rgba(255, 255, 255, 0.15);
+    opacity: 1;
+    transform: scale(1);
+}
+
+.hl-slot-plus {
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+/* Estado "ocultar": el slot vacío desaparece con animación (colapso + fade).
+   También se elimina el gap del row para que el colapso no deje hueco. */
+.hl-preview.hide-locked .hl-slot-row {
+    gap: 12px;
+}
+
+.hl-preview.hide-locked .hl-slot-locked {
+    opacity: 0;
+    transform: scale(0.4);
+    width: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+/* ==========================================================================
+   SWITCH CUADRICULADO (2 CELDAS + THUMB DESLIZANTE)
+   ========================================================================== */
+.hl-switch-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.hl-switch-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.hl-switch-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #e0e0e0;
+    letter-spacing: 0.3px;
+}
+
+.hl-switch-value {
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255, 255, 255, 0.35);
+    transition: color 0.25s ease;
+}
+
+.hl-switch-value.active {
+    color: #ffffff;
+    text-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
+}
+
+/* Contenedor del switch: grid de 2 columnas con cubierta deslizante */
+.hl-grid-switch {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 4px;
+    overflow: hidden;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Opciones (celdas) */
+.hl-grid-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 0;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.35);
+    transition: color 0.3s ease;
+    position: relative;
+    z-index: 2;
+}
+
+.hl-grid-option i {
+    font-size: 13px;
+}
+
+/* Celda activa: texto en negro sobre la cubierta blanca */
+.hl-grid-switch[data-active="false"] .hl-grid-option[data-value="false"],
+.hl-grid-switch[data-active="true"] .hl-grid-option[data-value="true"] {
+    color: #000000;
+}
+
+/* Cubierta deslizante (thumb): fondo blanco, monocromático */
+.hl-grid-thumb {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: calc(50% - 4px);
+    height: calc(100% - 8px);
+    background: #ffffff;
+    border-radius: 4px;
+    box-shadow: 0 2px 14px rgba(255, 255, 255, 0.35);
+    z-index: 1;
+    transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* El thumb viaja a la segunda celda cuando se activa "Ocultar" */
+.hl-grid-switch[data-active="true"] .hl-grid-thumb {
+    transform: translateX(100%);
+}
+
+/* --- Pista inferior --- */
+.hl-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 11px;
+    line-height: 1.5;
+    text-align: left;
+}
+
+.hl-hint i {
+    margin-top: 1px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.3);
+    flex-shrink: 0;
+}
+
+/* Pulso de las celdas al hacer clic */
+.hl-grid-option:active {
+    transform: scale(0.97);
+}
+
+/* Animación de entrada del modal */
+.hl-modal-body > * {
+    animation: hlFadeIn 0.4s ease backwards;
+}
+
+.hl-modal-body > *:nth-child(2) {
+    animation-delay: 0.08s;
+}
+
+.hl-modal-body > *:nth-child(3) {
+    animation-delay: 0.16s;
+}
+
+@keyframes hlFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ==========================================================================
+   MODAL SONIDOS DE INTERFAZ — SLIDER CUSTOM CUADRICULADO
+   ========================================================================== */
+.snd-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    text-align: left;
+}
+
+/* --- Preview de barras de volumen --- */
+.snd-preview {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+.snd-preview-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 56px;
+}
+
+.snd-bar {
+    width: 5px;
+    height: var(--bar-h);
+    min-height: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 1px;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.snd-preview-bars.play .snd-bar {
+    background: #ffffff;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+    animation: sndBarJump 0.5s ease-in-out infinite alternate;
+    animation-delay: calc(var(--i, 0) * 0.05s);
+}
+
+/* --- Slider custom --- */
+.snd-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.snd-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.snd-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #e0e0e0;
+    letter-spacing: 0.3px;
+}
+
+.snd-value {
+    font-size: 16px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 1px;
+    font-variant-numeric: tabular-nums;
+    min-width: 48px;
+    text-align: right;
+}
+
+/* Contenedor del slider: track con notch cuadriculado */
+.snd-slider {
+    position: relative;
+    height: 34px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    user-select: none;
+    touch-action: none;
+}
+
+/* Celdas de la cuadrícula (notches) */
+.snd-notches {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(20, 1fr);
+    gap: 2px;
+    padding: 5px;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.snd-notch {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.snd-notch.active {
+    background: #ffffff;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+}
+
+/* Barra de progreso (debajo de los notches) */
+.snd-fill {
+    position: absolute;
+    inset: 0;
+    width: 0%;
+    background: linear-gradient(90deg,
+            rgba(255, 255, 255, 0.05),
+            rgba(255, 255, 255, 0.18));
+    pointer-events: none;
+    transition: width 0.1s linear;
+}
+
+/* Mango deslizante */
+.snd-thumb {
+    position: absolute;
+    top: 50%;
+    left: 100%;
+    width: 16px;
+    height: 16px;
+    background: #ffffff;
+    border-radius: 3px;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.6), 0 2px 8px rgba(0, 0, 0, 0.6);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: left 0.08s linear;
+    z-index: 3;
+}
+
+.snd-hitbox {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    cursor: pointer;
+}
+
+/* Escala min/max */
+.snd-scale {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 11px;
+    padding: 0 2px;
+}
+
+/* Botón probar sonido */
+.snd-test-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 11px 0;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+}
+
+.snd-test-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+.snd-test-btn:active {
+    transform: scale(0.98);
+}
+
+/* Animación de las barras al reproducir */
+@keyframes sndBarJump {
+    0% {
+        height: var(--bar-h);
+        opacity: 0.7;
+    }
+
+    100% {
+        height: calc(var(--bar-h) * 1.25);
+        opacity: 1;
+    }
+}
+
 /* === REFLEJO INFERIOR: REPLICA EXACTA EXPANDIDA HASTA EL FONDO === */
 .landing-reflection-container {
     position: absolute;
@@ -2286,7 +2850,7 @@ sidebar-block:nth-child(1) {
 .search-box input:focus {
     border-color: rgba(255, 255, 255, 0.3);
     background: rgba(0, 0, 0, 0.7);
-    width: 350px;
+    width: 260px;
 }
 
 .search-box:focus-within i {

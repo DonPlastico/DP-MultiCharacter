@@ -104,12 +104,6 @@ Debe ser funcional de verdad, con dos modos configurables desde `config.lua` (a 
   - Si es un sistema **custom** propio del servidor, el admin deberá añadir manualmente la integración en `client`/`server` (dejar preparado el punto de enganche, claramente señalado en el código).
 - **Modo "URL externa (Google Form / tienda web, etc.)"**: el modal simplemente enlaza a una URL de compra externa; la asignación real de los slots comprados la hace el admin **manualmente** desde archivos/BD tras recibir el pago.
 
-### 2. Restaurar Personaje (papelera de reciclaje temporal)
-Actualmente, al borrar un personaje se elimina al 100% de la base de datos de inmediato. Cambiar a un **borrado suave con ventana de recuperación**:
-- Al borrar, en vez de un `DELETE` inmediato, marcar el personaje con un metadata `PROCESO_ELIMINACION` (con fecha/hora del borrado).
-- Mientras esté en ese estado (**5 días hábiles**), debe aparecer listado dentro del modal "Restaurar Personaje", para que el usuario pueda deshacer un borrado accidental.
-- Pasado ese plazo, el personaje se elimina **definitivamente y sin posibilidad de recuperación** (ahí sí, hard delete real de la BD).
-
 ### 3. Exportar Personaje (funcional)
 - Encima del recuadro de "código generado", mostrar una lista de los personajes disponibles del usuario, **cada uno con un checkbox**. El usuario debe poder seleccionar entre **2 y 7 personajes** (mínimo 2, máximo 7 = límite máximo de slots del sistema) para exportar de una vez.
 - El código generado (en JSON o XML, según el toggle) debe incluir el **detalle completo** de cada personaje seleccionado:
@@ -134,16 +128,6 @@ Actualmente, al borrar un personaje se elimina al 100% de la base de datos de in
 
 ### 5. Spawn Preferido
 Pendiente de revisar más adelante, cuando se implemente un sistema de Spawn propio dentro de `DP-MultiCharacter` (para no depender de tener la lógica repartida en dos scripts distintos como ahora con `qb-spawn`).
-
-### 6. Ocultar Bloqueados — rediseño del switch
-El switch actual es un placeholder genérico. Rediseñarlo como un **switch custom cuadriculado**, a juego con el estilo visual del resto del script (mismo lenguaje que el resto de la UI). Comportamiento funcional:
-- **Visible** (por defecto): los slots vacíos (de "crear personaje nuevo") se muestran igual que los slots con personajes ya creados.
-- **Oculto**: solo se muestran los slots que el usuario ya tiene ocupados con personajes existentes — los vacíos/bloqueados desaparecen de la vista, según la cantidad de slots que tenga cada usuario.
-
-### 7. Sonidos de Interfaz — rediseño del slider + persistencia
-- Rediseñar el slider actual como un **slider custom cuadriculado**, a juego con el estilo del resto del script.
-- Debe ser completamente funcional: el volumen de los sonidos de hover/click/etc. debe subir o bajar en proporción real al % marcado.
-- Guardar el volumen **por usuario** en base de datos (no solo en `localStorage` como está ahora) — definir qué tabla usar (nueva tabla o columna en una existente) para persistir el % de volumen de interfaz de cada jugador.
 
 ### 8. Reportar Bug (funcional + integración con DP-AdminMenu)
 - El mensaje que escriba el usuario debe llegar a los administradores a través de `DP-AdminMenu`, soportando tanto texto como imágenes adjuntas.
@@ -193,29 +177,26 @@ Cuando se implemente el punto 4, contemplar el caso de que el **mismo código de
 ### 21. UX — Estados de carga (loading) en acciones asíncronas
 Ninguna acción que depende del servidor (crear personaje, borrar, reordenar, exportar/importar cuando existan) muestra actualmente un estado de "cargando" mientras se espera la respuesta de Lua. Añadir spinners/estados deshabilitados en los botones relevantes mientras la petición está en curso, para evitar que el usuario pulse varias veces pensando que no ha funcionado (lo cual además agravaría el punto 19).
 
-### 22. UX — Confirmación visual de guardado en Opciones (toast/notificación)
-Actualmente, acciones como reordenar personajes solo muestran una notificación nativa de QBCore (`QBCore:Notify`) que aparece fuera del propio NUI. Añadir un sistema de notificación "toast" propio dentro de la interfaz (esquina de la pantalla de Opciones) para confirmar visualmente acciones como "Orden guardado", "Volumen guardado", "Personaje exportado", consistente con el estilo visual del resto del script, sin depender de que el jugador vea la notificación nativa del juego.
-
-### 23. Gestión — Marcar personaje como favorito
+### 22. Gestión — Marcar personaje como favorito
 El botón "Marcar como favorito" existe visualmente en el roadmap pero no está desarrollado como punto propio. Al marcarlo, ese personaje debe aparecer destacado visualmente en la lista de "Personajes" (por ejemplo con una estrella o borde distinto) y ordenarse primero por defecto en la tabla de Opciones. Guardar el estado de favorito en base de datos (metadata o tabla nueva), asociado al `citizenid`.
 
-### 24. Gestión — Personaje por defecto (independiente del "último usado")
+### 23. Gestión — Personaje por defecto (independiente del "último usado")
 Actualmente el botón "Continuar con tu historia" siempre carga el personaje con el `cid` más bajo (`plyChars[1]`). Permitir que el jugador fije explícitamente **cuál** quiere que sea su personaje por defecto para ese botón, independientemente de cuál usó por última vez o de su número de slot — guardarlo en base de datos y usarlo en `sv_database.lua` al calcular `lastCharacter`.
 
-### 25. Gestión — Historial de actividad por personaje
+### 24. Gestión — Historial de actividad por personaje
 Ampliar el panel de detalle (o la pantalla de Opciones) con un pequeño historial por personaje: fecha de creación, número de veces que se ha jugado (sesiones), y opcionalmente un log simple de eventos relevantes (cambios de trabajo, ingreso/salida de banda). Útil tanto para el jugador como para moderación si hay disputas.
 
-### 26. Administración — Panel de estadísticas globales del servidor (server-side)
+### 25. Administración — Panel de estadísticas globales del servidor (server-side)
 Crear un comando o export pensado para administradores (o integrable en `DP-AdminMenu`) que devuelva estadísticas agregadas del sistema de personajes: número total de personajes activos en el servidor, media de slots usados por jugador, personajes creados en las últimas 24h/7 días, y personajes actualmente en `PROCESO_ELIMINACION` (ver punto 2) pendientes de purga.
 
-### 27. Administración — Log de auditoría de acciones críticas
+### 26. Administración — Log de auditoría de acciones críticas
 Registrar en una tabla propia (`multicharacter_audit_log` o similar) cada acción sensible que ocurra: creación, borrado (y quién lo confirmó), reordenamiento, exportación e importación de personajes — con `license`, `citizenid` afectado, timestamp y tipo de acción. Sirve tanto para depurar problemas reportados por jugadores como para que un admin pueda investigar un caso de abuso o duplicación.
 
-### 28. Rendimiento — Cachear la consulta de `setupCharacters` en servidor
+### 27. Rendimiento — Cachear la consulta de `setupCharacters` en servidor
 Cada vez que se abre la UI (`setupCharacters`) se lanza una query completa con `LEFT JOIN` a `playerskins`. Si el jugador entra y sale del selector varias veces seguidas (por ejemplo cancelando creación de personaje), se repite la misma consulta sin necesidad. Añadir una caché en memoria de corta duración (unos segundos) por `license`, invalidándola inmediatamente tras cualquier escritura (crear, borrar, reordenar) para no servir datos desactualizados.
 
-### 29. Rendimiento — Revisar el hilo de densidad de tráfico/peds en `SetupCamera`
+### 28. Rendimiento — Revisar el hilo de densidad de tráfico/peds en `SetupCamera`
 El hilo que fuerza a `0.0` los multiplicadores de densidad de peds/vehículos mientras la cámara del selector está activa se ejecuta en bucle (`CreateThread` sin `Wait` explícito entre iteraciones salvo el implícito). Revisar que tenga un `Wait` razonable (aunque sea 0 o 100ms) para no consumir ciclos de CPU innecesarios del hilo principal del cliente mientras el jugador simplemente está mirando el menú sin interactuar.
 
-### 30. Técnico — Manejo de errores y timeouts en las llamadas `axios.post` del NUI
+### 29. Técnico — Manejo de errores y timeouts en las llamadas `axios.post` del NUI
 Actualmente varias llamadas `axios.post` desde `app.js` no gestionan el caso de que la promesa falle o tarde demasiado (el NUI podría quedarse esperando indefinidamente una respuesta que nunca llega, por ejemplo si el recurso Lua se reinicia a mitad de una petición). Añadir un `.catch()` consistente en todas las llamadas relevantes, con un timeout razonable y un mensaje de error visible en la UI en vez de fallar en silencio, para que la interfaz nunca se quede "colgada" esperando al servidor.

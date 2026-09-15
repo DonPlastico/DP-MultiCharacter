@@ -54,7 +54,18 @@ Locales['pt'] = {
     ['char_deleted'] = 'Personagem excluído do banco de dados.',
     ['invalid_name'] = 'O nome ou sobrenome contém caracteres inválidos.',
     ['profanity_detected'] = 'Uma palavra não permitida foi detectada em seu nome.',
-    ['loading_data'] = 'Carregando informações do jogador...'
+    ['loading_data'] = 'Carregando informações do jogador...',
+    ['ui_visible'] = 'VISÍVEL',
+    ['ui_hidden'] = 'OCULTO',
+    ['ui_hide_locked_preview'] = 'Pré-visualização do seletor',
+    ['ui_hide_locked_switch'] = 'Ocultar slots vazios',
+    ['ui_hide_locked_hint'] = 'Os slots vazios serão ocultados do seletor e você verá apenas seus personagens criados.',
+    ['ui_hide_locked_on'] = 'Apenas personagens criados',
+    ['ui_hide_locked_off'] = 'Slots vazios fora do seletor',
+    ['ui_sound_volume'] = 'Volume da interface',
+    ['ui_sound_test'] = 'Testar som',
+    ['ui_sound_off'] = 'Sons desativados',
+    ['ui_sound_level'] = 'Volume em %s%'
 }
 
 DebugPrint("Dicionário português ('pt') registrado com sucesso.")

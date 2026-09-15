@@ -16,7 +16,11 @@ let minAge = 18; // Comodín inicial de seguridad (Se machaca con el Config al a
 let maxAge = 100; // Comodín inicial de seguridad (Se machaca con el Config al abrir)
 let flatpickrInstance = null; // Referencia global a la instancia del datepicker para poder recalcularla si cambian minAge/maxAge
 let interfaceVolume = 100; // Volumen (0-100) de los sonidos de interfaz; se carga de localStorage al iniciar
+let trashedSlots = 0; // Nº de slots ocupados por personajes en la papelera (PROCESO_ELIMINACION)
 let randomSlotGenders = {}; // Variable para guardar los géneros
+let hideLockedSlots = false; // Si true, los slots vacíos ("bloqueados") NO se muestran en el selector
+const HIDE_LOCKED_STORAGE_KEY = 'dpmc_hide_locked'; // localStorage (fallback rápido solo-UI)
+const VOLUME_STORAGE_KEY = 'dpmc_interface_volume'; // localStorage (arranque rápido, la BD manda)
 
 // ==========================================
 // 🛠️ FUNCIÓN DE DEPURACIÓN (DEBUG)
@@ -96,6 +100,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const parsedVolume = parseInt(storedVolume);
         if (!isNaN(parsedVolume)) interfaceVolume = Math.max(0, Math.min(100, parsedVolume));
     }
+
+    // Cargar la preferencia de "Ocultar Bloqueados" guardada (localStorage por ahora; ver Lua)
+    const storedHideLocked = localStorage.getItem(HIDE_LOCKED_STORAGE_KEY);
+    if (storedHideLocked !== null && storedHideLocked !== '') {
+        hideLockedSlots = storedHideLocked === 'true';
+    }
+    DebugPrint("Preferencia 'Ocultar Bloqueados' cargada: " + hideLockedSlots);
 
     const MONTH_NAMES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
@@ -423,6 +434,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 applyAgeLimitsToFlatpickr(flatpickrInstance);
             }
 
+            // Estado persistente de "Ocultar Bloqueados" enviado desde Lua (KVP):
+            // si viene definido, tiene prioridad sobre el localStorage de arranque.
+            if (data.hideLocked !== undefined) {
+                hideLockedSlots = !!data.hideLocked;
+                localStorage.setItem(HIDE_LOCKED_STORAGE_KEY, String(hideLockedSlots));
+                DebugPrint("Preferencia 'Ocultar Bloqueados' sincronizada desde Lua: " + hideLockedSlots);
+            }
+            // Subtexto del sidebar coherente con el estado actual
+            const hlSubEl = document.getElementById('hide-locked-sub');
+            if (hlSubEl) {
+                hlSubEl.innerText = hideLockedSlots
+                    ? Translate('ui_hide_locked_on', 'Solo personajes creados')
+                    : Translate('ui_hide_locked_off', 'Slots vacíos fuera del selector');
+            }
+            // Si el modal está abierto en ese momento, refrescar su UI
+            if (document.getElementById('modal-hide-locked').style.display !== 'none') {
+                refreshHideLockedUI();
+            }
+
+            // Volumen de interfaz persistido en BD (enviado por Lua desde cl_main.lua):
+            // si viene definido, tiene prioridad sobre el localStorage de arranque.
+            if (data.interfaceVolume !== undefined) {
+                interfaceVolume = Math.max(0, Math.min(100, parseInt(data.interfaceVolume) || 0));
+                localStorage.setItem(VOLUME_STORAGE_KEY, String(interfaceVolume));
+                DebugPrint("Volumen de interfaz sincronizado desde BD: " + interfaceVolume + "%");
+            }
+            // Si el modal de sonidos está abierto en ese momento, refrescar su UI
+            if (document.getElementById('modal-sound-toggle').style.display !== 'none'
+                && typeof window.refreshSoundSlider === 'function') {
+                window.refreshSoundSlider(interfaceVolume);
+            }
+
             DebugPrint("Evento 'toggleUI' recibido. Estado: " + data.state);
             document.getElementById('app').style.display = data.state ? "block" : "none";
 
@@ -440,6 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
             charactersData = data.characters;
             maxSlots = data.slots || 4;
             lastCharacter = data.lastCharacter || null;
+            trashedSlots = data.trashedSlots || 0; // Slots ocupados por personajes en la papelera (no se listan, pero bloquean el hueco)
             renderSlots();
             updateLandingScreen();
             updateOptionsStats();
@@ -464,6 +508,9 @@ document.addEventListener('DOMContentLoaded', () => {
             // El servidor ya terminó de borrar: pedimos la lista fresca AHORA,
             // sin esperar a que el usuario salga y vuelva a entrar.
             axios.post(`https://${resName}/setupCharacters`, JSON.stringify({}));
+        } else if (data.action === "deletedCharactersList") {
+            DebugPrint("Evento 'deletedCharactersList' recibido. Personajes en papelera: " + (data.characters ? data.characters.length : 0));
+            renderRestoreList(data.characters || []);
         }
     });
 
@@ -539,7 +586,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const openModals = Array.from(document.querySelectorAll('.modal-overlay')).filter(m => m.style.display === "flex");
             if (openModals.length > 0) {
                 DebugPrint("Cerrando modal mediante tecla ESC.");
-                openModals.forEach(m => m.style.display = "none");
+                openModals.forEach(m => {
+                    // El modal de ocultar bloqueados descarta los cambios sin guardar
+                    if (m.id === 'modal-hide-locked' && typeof window.closeHideLockedModal === 'function') {
+                        window.closeHideLockedModal(true);
+                        return;
+                    }
+                    m.style.display = "none";
+                });
                 if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 return;
             }
@@ -1350,11 +1404,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>`,
 
-            'modal-restore-char': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
-                <i class="fas fa-search" style="font-size: 24px; opacity: 0.5; margin-bottom: 10px; display: block;"></i>
-                <p style="margin-bottom:0;">No se han encontrado personajes eliminados en los últimos 30 días.</p>
-            </div>`,
-
             'modal-spawn-pref': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px 0;">
                     <input type="radio" name="spawn_type" checked style="accent-color: #fff; transform: scale(1.2);"> 
@@ -1364,17 +1413,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <input type="radio" name="spawn_type" style="accent-color: #fff; transform: scale(1.2);"> 
                     <span>Forzar selector de aparición (qb-spawn)</span>
                 </label>
-            </div>`,
-
-            'modal-hide-locked': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
-                <p style="font-size: 13px; margin-top:0;">Oculta los slots con candado en la vista principal para una interfaz más limpia.</p>
-                <div style="margin-top: 15px; display: flex; align-items: center; justify-content: center; gap: 15px;">
-                    <span style="color: #fff; font-weight: bold;">Visible</span>
-                    <div style="width: 44px; height: 22px; background: rgba(255,255,255,0.2); border-radius: 11px; position: relative; cursor: pointer;">
-                        <div style="width: 16px; height: 16px; background: #fff; border-radius: 50%; position: absolute; left: 3px; top: 3px; transition: all 0.3s;"></div>
-                    </div>
-                    <span>Oculto</span>
-                </div>
             </div>`,
 
             'modal-report-bug': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
@@ -1404,9 +1442,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // ==========================================
         const modalBindings = {
             'btn-buy-slot': 'modal-buy-slots',
-            'btn-restore-char': 'modal-restore-char',
             'btn-spawn-pref': 'modal-spawn-pref',
-            'btn-hide-locked': 'modal-hide-locked',
             'btn-report-bug': 'modal-report-bug',
             'btn-discord': 'modal-discord'
         };
@@ -1432,13 +1468,20 @@ document.addEventListener('DOMContentLoaded', () => {
             // Cerrar al hacer click en el overlay oscuro exterior
             modal.addEventListener('mousedown', (e) => {
                 if (e.target === modal) {
+                    // El modal de ocultar bloqueados descarta los cambios sin guardar
+                    if (modal.id === 'modal-hide-locked' && typeof window.closeHideLockedModal === 'function') {
+                        window.closeHideLockedModal(true);
+                        if (typeof Sounds !== 'undefined') Sounds.playCancel();
+                        return;
+                    }
                     modal.style.display = 'none';
                     if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 }
             });
 
-            // Si es el de borrado, exportar/importar o sonidos, saltamos los botones porque tienen lógica propia
-            if (modal.id === 'delete-modal' || modal.id === 'modal-export-import' || modal.id === 'modal-sound-toggle') return;
+            // Si es el de borrado, exportar/importar, sonidos u ocultar bloqueados,
+            // saltamos los botones porque tienen lógica propia
+            if (modal.id === 'delete-modal' || modal.id === 'modal-export-import' || modal.id === 'modal-sound-toggle' || modal.id === 'modal-hide-locked') return;
 
             // Funciones de botones cancelar / confirmar genéricas para las DEMOS
             const closeBtns = modal.querySelectorAll('.btn-modal-cancel, .btn-modal-primary');
@@ -1456,12 +1499,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // ==========================================
-        // 🔊 SONIDOS DE INTERFAZ (Volumen)
+        // 🔊 SONIDOS DE INTERFAZ — SLIDER CUSTOM + PERSISTENCIA BD
         // ==========================================
-        // Por ahora el volumen se guarda en localStorage (solo-UI). Cuando se conecte
-        // con Lua, saveInterfaceVolume() es el único punto que habrá que tocar para
-        // mandar también el valor a cl_events.lua vía axios.post (KVP persistente real).
-        const VOLUME_STORAGE_KEY = 'dpmc_interface_volume';
+        // El volumen se aplica en tiempo real a los sonidos WebAudio (sounds.js)
+        // y se persiste por jugador en la BD (tabla dp_multicharacter_settings)
+        // a través de Lua. localStorage queda solo como arranque rápido.
 
         function loadInterfaceVolume() {
             const stored = localStorage.getItem(VOLUME_STORAGE_KEY);
@@ -1470,53 +1512,271 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function saveInterfaceVolume(value) {
-            interfaceVolume = value;
-            localStorage.setItem(VOLUME_STORAGE_KEY, String(value));
-            DebugPrint("Volumen de interfaz guardado: " + value + "%");
-            // TODO (pendiente de cl_events.lua): persistir también vía KVP en Lua.
-            // axios.post(`https://${resName}/setInterfaceVolume`, JSON.stringify({ volume: value }));
+            interfaceVolume = Math.max(0, Math.min(100, parseInt(value) || 0));
+            localStorage.setItem(VOLUME_STORAGE_KEY, String(interfaceVolume));
+            DebugPrint("Volumen de interfaz guardado: " + interfaceVolume + "%");
+            // Persistencia real en BD vía Lua (por jugador, tabla dp_multicharacter_settings)
+            axios.post(`https://${resName}/setInterfaceVolume`, JSON.stringify({ volume: interfaceVolume }))
+                .catch(() => DebugPrint("Aviso: el endpoint /setInterfaceVolume no respondió."));
         }
 
         const soundToggleBtn = document.getElementById('btn-sound-toggle');
         const soundModal = document.getElementById('modal-sound-toggle');
-        const soundSlider = document.getElementById('sound-volume-slider');
-        const soundValueLabel = document.getElementById('sound-volume-value');
+        const sndSlider = document.getElementById('snd-slider');
+        const sndNotches = document.getElementById('snd-notches');
+        const sndFill = document.getElementById('snd-fill');
+        const sndThumb = document.getElementById('snd-thumb');
+        const sndValueLabel = document.getElementById('snd-volume-value');
         const soundSaveBtn = document.getElementById('btn-sound-save');
         const soundCancelBtn = document.getElementById('btn-sound-cancel');
+        const sndTestBtn = document.getElementById('snd-test-btn');
+        const sndPreviewBars = document.getElementById('snd-preview-bars');
 
-        if (soundToggleBtn && soundModal && soundSlider) {
+        // Índices escalonados para la animación de las barras del preview
+        if (sndPreviewBars) {
+            sndPreviewBars.querySelectorAll('.snd-bar').forEach((bar, i) => {
+                bar.style.setProperty('--i', i % 4);
+            });
+        }
+
+        // --- Constructores de notches (20 celdas) ---
+        function buildNotches() {
+            if (!sndNotches) return;
+            sndNotches.innerHTML = '';
+            for (let i = 0; i < 20; i++) {
+                const notch = document.createElement('div');
+                notch.className = 'snd-notch';
+                sndNotches.appendChild(notch);
+            }
+        }
+
+        // --- Refresco visual del slider según un valor 0-100 ---
+        window.refreshSoundSlider = function refreshSoundSlider(value) {
+            const v = Math.max(0, Math.min(100, value));
+            interfaceVolume = v;
+
+            if (sndValueLabel) sndValueLabel.innerText = v + '%';
+
+            // % -> posición del thumb y ancho del fill
+            if (sndThumb) sndThumb.style.left = v + '%';
+            if (sndFill) sndFill.style.width = v + '%';
+
+            // Rellenar notches activos (20 celdas = pasos de 5%)
+            if (sndNotches) {
+                const notches = sndNotches.querySelectorAll('.snd-notch');
+                const activeCount = Math.round((v / 100) * notches.length);
+                notches.forEach((n, i) => {
+                    n.classList.toggle('active', i < activeCount);
+                });
+            }
+
+            // Subtexto del sidebar coherente
+            const subEl = document.getElementById('sound-toggle-sub');
+            if (subEl) {
+                subEl.innerText = v <= 0
+                    ? Translate('ui_sound_off', 'Sonidos desactivados')
+                    : Translate('ui_sound_level', 'Volumen al %s%').replace('%s', v);
+            }
+        };
+
+        // Convierte una posición X (click/arrastre) en valor 0-100
+        function valueFromPointer(e) {
+            if (!sndSlider) return interfaceVolume;
+            const rect = sndSlider.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const pct = (x / rect.width) * 100;
+            return Math.max(0, Math.min(100, Math.round(pct)));
+        }
+
+        // Arrastre con el ratón sobre el slider
+        function initSliderDrag() {
+            if (!sndSlider) return;
+
+            let dragging = false;
+
+            const updateFromEvent = (e) => {
+                const v = valueFromPointer(e);
+                window.refreshSoundSlider(v);
+            };
+
+            sndSlider.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                dragging = true;
+                updateFromEvent(e);
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (dragging) updateFromEvent(e);
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (dragging) {
+                    dragging = false;
+                    // Sonido de prueba al soltar, para que el usuario escuche el nivel elegido
+                    if (interfaceVolume > 0 && typeof Sounds !== 'undefined') Sounds.playTest();
+                }
+            });
+        }
+
+        // Inicial con los 20 notches
+        buildNotches();
+
+        if (soundToggleBtn && soundModal && sndSlider) {
             soundToggleBtn.addEventListener('click', () => {
                 DebugPrint("Abriendo modal de Sonidos de Interfaz.");
-                soundSlider.value = interfaceVolume;
-                soundValueLabel.innerText = interfaceVolume + '%';
+                window.refreshSoundSlider(interfaceVolume);
                 soundModal.style.display = "flex";
                 if (typeof Sounds !== 'undefined') Sounds.playSelect();
             });
 
-            // Actualiza el % en vivo mientras se arrastra el slider (sin guardar todavía)
-            soundSlider.addEventListener('input', () => {
-                soundValueLabel.innerText = soundSlider.value + '%';
-            });
-
-            // Sonido de prueba al soltar el slider, para que el usuario escuche el volumen elegido
-            soundSlider.addEventListener('change', () => {
-                if (typeof Sounds !== 'undefined') Sounds.playNav();
-            });
+            // Sonido de prueba (botón + barras animadas)
+            if (sndTestBtn) {
+                sndTestBtn.addEventListener('click', () => {
+                    if (typeof Sounds !== 'undefined') Sounds.playTest();
+                    if (sndPreviewBars) {
+                        sndPreviewBars.classList.remove('play');
+                        void sndPreviewBars.offsetWidth; // reinicia la animación
+                        sndPreviewBars.classList.add('play');
+                        setTimeout(() => sndPreviewBars.classList.remove('play'), 900);
+                    }
+                });
+            }
 
             if (soundSaveBtn) {
                 soundSaveBtn.addEventListener('click', () => {
-                    saveInterfaceVolume(parseInt(soundSlider.value));
+                    saveInterfaceVolume(interfaceVolume);
                     soundModal.style.display = "none";
+                    if (sndPreviewBars) sndPreviewBars.classList.remove('play');
                     if (typeof Sounds !== 'undefined') Sounds.playSelect();
                 });
             }
 
             if (soundCancelBtn) {
                 soundCancelBtn.addEventListener('click', () => {
+                    // Descartar cambios: restaurar valor persistido
+                    window.refreshSoundSlider(loadInterfaceVolume());
                     soundModal.style.display = "none";
+                    if (sndPreviewBars) sndPreviewBars.classList.remove('play');
                     if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 });
             }
+
+            initSliderDrag();
+        }
+
+        // Inicializa el subtexto del sidebar de sonidos con el volumen actual
+        if (typeof window.refreshSoundSlider === 'function') {
+            window.refreshSoundSlider(interfaceVolume);
+        }
+
+        // ==========================================
+        // 👁️ OCULTAR BLOQUEADOS — SWITCH CUADRICULADO
+        // ==========================================
+        // Controla si los slots vacíos ("bloqueados" / de crear personaje) se
+        // muestran en la vista principal del selector. La preferencia se guarda
+        // en localStorage (solo-UI) y se envía a Lua para que persista en KVP.
+        const hlModal = document.getElementById('modal-hide-locked');
+        const hlBtn = document.getElementById('btn-hide-locked');
+        const hlGridSwitch = document.getElementById('hl-grid-switch');
+        const hlSwitchValue = document.getElementById('hl-switch-value');
+        const hlSaveBtn = document.getElementById('hl-save-btn');
+        const hlPreview = document.querySelector('.hl-preview');
+
+        // Valor temporal del modal: se edita al tocar el switch y SOLO se aplica
+        // a hideLockedSlots (y se persiste) al pulsar "ACTUALIZAR". Si se cierra
+        // sin guardar, se descarta y se restaura el valor persistido.
+        let hlTempValue = false;
+
+        // Actualiza el estado visual del switch + la vista previa según el valor indicado.
+        // Se usa un parámetro para poder mostrar el valor temporal del modal sin
+        // modificar todavía hideLockedSlots (la preferencia persistida).
+        // (global para que el listener de 'toggleUI' también pueda refrescarla)
+        window.refreshHideLockedUI = function refreshHideLockedUI(useValue) {
+            const value = useValue !== undefined ? useValue : hideLockedSlots;
+            if (hlGridSwitch) hlGridSwitch.dataset.active = String(value);
+            if (hlSwitchValue) {
+                hlSwitchValue.innerText = Translate(value ? 'ui_hidden' : 'ui_visible', value ? 'OCULTO' : 'VISIBLE');
+                hlSwitchValue.classList.toggle('active', value);
+            }
+            if (hlPreview) hlPreview.classList.toggle('hide-locked', value);
+            DebugPrint("UI del switch 'Ocultar Bloqueados' sincronizada (valor: " + value + ")");
+        };
+
+        // Abrir el modal con el estado persistido como base (sin aplicar cambios aún)
+        if (hlBtn && hlModal) {
+            hlBtn.addEventListener('click', () => {
+                DebugPrint("Abriendo modal 'Ocultar Bloqueados'. Estado persistido: " + hideLockedSlots);
+                hlTempValue = hideLockedSlots;
+                refreshHideLockedUI(hlTempValue);
+                hlModal.style.display = "flex";
+                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+            });
+        }
+
+        // Botón "CERRAR" del modal (descartar cambios sin guardar)
+        const hlCancelBtn = hlModal ? hlModal.querySelector('.btn-modal-cancel') : null;
+
+        // Cierre centralizado del modal. Si keepValue es false (descartar),
+        // se restaura el valor persistido; si es true (tras guardar) solo se oculta.
+        window.closeHideLockedModal = function closeHideLockedModal(discardChanges) {
+            if (discardChanges !== false) {
+                // Descartar: restaurar el valor persistido
+                hlTempValue = hideLockedSlots;
+                refreshHideLockedUI(hideLockedSlots);
+            }
+            hlModal.style.display = "none";
+        };
+
+        if (hlCancelBtn) {
+            hlCancelBtn.addEventListener('click', () => {
+                DebugPrint("Cerrando modal 'Ocultar Bloqueados' sin guardar. Descartando cambios.");
+                window.closeHideLockedModal(true);
+                if (typeof Sounds !== 'undefined') Sounds.playCancel();
+            });
+        }
+
+        // Al hacer clic en el switch, cambiamos la selección temporal (sin persistir aún)
+        if (hlGridSwitch) {
+            hlGridSwitch.addEventListener('click', (e) => {
+                const option = e.target.closest('.hl-grid-option');
+                if (!option) return;
+
+                const newValue = option.dataset.value === 'true';
+                if (newValue === hlTempValue) return; // Ya está en ese estado
+
+                hlTempValue = newValue;
+                refreshHideLockedUI(hlTempValue);
+                if (typeof Sounds !== 'undefined') Sounds.playNav();
+            });
+        }
+
+        // Botón "ACTUALIZAR": aplica la preferencia (localStorage + Lua) y re-renderiza
+        if (hlSaveBtn) {
+            hlSaveBtn.addEventListener('click', () => {
+                DebugPrint("Guardando preferencia 'Ocultar Bloqueados': " + hlTempValue);
+                hideLockedSlots = hlTempValue; // Aplicar el valor decidido
+
+                // 1) localStorage (solo-UI, arranque rápido)
+                localStorage.setItem(HIDE_LOCKED_STORAGE_KEY, String(hideLockedSlots));
+
+                // 2) Lua (KVP persistente por jugador + recálculo de peds)
+                axios.post(`https://${resName}/setHideLocked`, JSON.stringify({ hideLocked: hideLockedSlots }))
+                    .catch(() => DebugPrint("Aviso: el endpoint /setHideLocked no respondió."));
+
+                // 3) Re-renderizar los slots para aplicar el filtro al momento
+                renderSlots();
+
+                // 4) Texto del subtítulo en el sidebar
+                const subEl = document.getElementById('hide-locked-sub');
+                if (subEl) {
+                    subEl.innerText = hideLockedSlots
+                        ? Translate('ui_hide_locked_on', 'Solo personajes creados')
+                        : Translate('ui_hide_locked_off', 'Slots vacíos fuera del selector');
+                }
+
+                hlModal.style.display = "none";
+                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+            });
         }
 
         // ==========================================
@@ -1682,6 +1942,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 expimpModal.style.display = 'none';
             });
         }
+
+        // ==========================================
+        // ♻️ RESTAURAR PERSONAJE (Papelera)
+        // ==========================================
+        // NOTA: renderRestoreList() y formatDaysRemaining() viven en scope global
+        // (fuera de este IIFE), porque el listener de window.addEventListener('message')
+        // que recibe la respuesta de Lua ('deletedCharactersList') está también fuera
+        // de este bloque y necesita poder llamarlas.
+        const restoreBtn = document.getElementById('btn-restore-char');
+        const restoreModal = document.getElementById('modal-restore-char');
+
+        if (restoreBtn && restoreModal) {
+            restoreBtn.addEventListener('click', () => {
+                DebugPrint("Abriendo modal de Restaurar Personaje. Solicitando lista al servidor.");
+                restoreModal.style.display = 'flex';
+
+                // Estado inicial: cargando
+                document.getElementById('restore-loading-state').style.display = 'flex';
+                document.getElementById('restore-empty-state').style.display = 'none';
+                const listEl = document.getElementById('restore-list');
+                listEl.style.display = 'none';
+                listEl.innerHTML = '';
+
+                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+
+                axios.post(`https://${resName}/getDeletedCharacters`, JSON.stringify({}))
+                    .catch(() => {
+                        DebugPrint("Error al pedir la lista de personajes en papelera.");
+                        document.getElementById('restore-loading-state').style.display = 'none';
+                        document.getElementById('restore-empty-state').style.display = 'flex';
+                    });
+            });
+        }
     })();
 });
 
@@ -1805,8 +2098,26 @@ function processNavQueue() {
     const direction = navQueue.shift();
 
     let newSlot = selectedSlot + direction;
-    if (newSlot < 1) newSlot = maxSlots;
-    if (newSlot > maxSlots) newSlot = 1;
+
+    // Si "Ocultar Bloqueados" está activo, la navegación con flechas salta
+    // SOLO entre los slots que tienen personajes creados (los vacíos no existen en la vista).
+    if (hideLockedSlots) {
+        const occupiedSlots = charactersData.map(c => c.cid).sort((a, b) => a - b);
+        if (occupiedSlots.length <= 1) {
+            // Solo hay un personaje: no hay a dónde navegar
+            DebugPrint("Navegación bloqueada: solo existe un personaje con 'Ocultar Bloqueados' activo.");
+            isNavigating = false;
+            navQueue = [];
+            return;
+        }
+        const currentIndex = occupiedSlots.indexOf(selectedSlot);
+        const nextIndex = (currentIndex + direction + occupiedSlots.length) % occupiedSlots.length;
+        newSlot = occupiedSlots[nextIndex];
+    } else {
+        // Navegación cíclica normal por todos los slots (ocupados y vacíos)
+        if (newSlot < 1) newSlot = maxSlots;
+        if (newSlot > maxSlots) newSlot = 1;
+    }
 
     DebugPrint("Navegando al slot: " + newSlot);
     selectSlot(newSlot, direction);
@@ -1977,9 +2288,70 @@ function formatDateTime(value) {
         `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
+// Formatea los días restantes de un personaje en papelera en un texto legible
+function formatDaysRemaining(days) {
+    if (days <= 0) return 'Menos de 1 día';
+    if (days === 1) return '1 día';
+    return days + ' días';
+}
+
+// Pinta la lista de personajes en papelera (Restaurar Personaje) recibida del servidor.
+// Se llama desde el listener de window.addEventListener('message') al recibir
+// la acción 'deletedCharactersList', por eso vive en scope global igual que renderSlots().
+function renderRestoreList(characters) {
+    const loadingState = document.getElementById('restore-loading-state');
+    const emptyState = document.getElementById('restore-empty-state');
+    const listContainer = document.getElementById('restore-list');
+    if (!loadingState || !emptyState || !listContainer) return;
+
+    loadingState.style.display = 'none';
+
+    if (!characters || characters.length === 0) {
+        emptyState.style.display = 'flex';
+        listContainer.style.display = 'none';
+        listContainer.innerHTML = '';
+        return;
+    }
+
+    emptyState.style.display = 'none';
+    listContainer.style.display = 'flex';
+    listContainer.innerHTML = '';
+
+    characters.forEach(char => {
+        const fullName = char.charinfo
+            ? `${char.charinfo.firstname || ''} ${char.charinfo.lastname || ''}`.trim()
+            : 'Personaje';
+
+        const row = document.createElement('div');
+        row.className = 'restore-row';
+        row.innerHTML = `
+            <div class="restore-row-info">
+                <span class="restore-row-name">${fullName}</span>
+                <span class="restore-row-meta">CitizenID: ${char.citizenid || '---'} &middot; Se elimina definitivamente en ${formatDaysRemaining(char.daysRemaining)}</span>
+            </div>
+            <button type="button" class="btn-restore-row" data-citizenid="${char.citizenid}">
+                <i class="fas fa-clock-rotate-left"></i> Restaurar
+            </button>
+        `;
+        listContainer.appendChild(row);
+
+        row.querySelector('.btn-restore-row').addEventListener('click', () => {
+            const citizenid = char.citizenid;
+            DebugPrint("Solicitando restaurar personaje CitizenID: " + citizenid);
+            axios.post(`https://${resName}/restoreCharacter`, JSON.stringify({ citizenid }))
+                .catch(() => DebugPrint("Error al solicitar la restauración del personaje."));
+            if (typeof Sounds !== 'undefined') Sounds.playSelect();
+            // Cerramos el modal; la lista de personajes se refrescará sola cuando
+            // el servidor confirme (llega por el mismo aviso que usa reorderDone).
+            const modal = document.getElementById('modal-restore-char');
+            if (modal) modal.style.display = 'none';
+        });
+    });
+}
+
 // Construye e inyecta los contenedores (slots) HTML para cada ranura de personaje permitida
 function renderSlots() {
-    DebugPrint("Renderizando HTML de slots (" + maxSlots + " totales).");
+    DebugPrint("Renderizando HTML de slots (" + maxSlots + " totales). Ocultar vacíos: " + hideLockedSlots);
     const wrapper = document.getElementById('slots-wrapper');
     wrapper.innerHTML = '';
 
@@ -1995,8 +2367,12 @@ function renderSlots() {
                     </div>
                 </div>
             `;
-        } else {
-            // Slot vacío (con icono de más)
+        } else if (!hideLockedSlots || charactersData.length === 0) {
+            // Slot vacío (con icono de más).
+            // Si "Ocultar Bloqueados" está activo, los slots vacíos NO se pintan...
+            // EXCEPTO si el usuario no tiene ningún personaje creado: en ese caso
+            // se muestra al menos el primer slot para que pueda crear el primero
+            // (evita un callejón sin salida en el selector).
             wrapper.innerHTML += `
                 <div class="char-slot empty-slot" data-slot="${i}">
                     <span class="material-symbols-outlined slot-icon">add</span>

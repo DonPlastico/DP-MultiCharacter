@@ -54,7 +54,18 @@ Locales['es'] = {
     ['char_deleted'] = 'Personaje eliminado de la base de datos.',
     ['invalid_name'] = 'El nombre o apellido contiene caracteres no válidos.',
     ['profanity_detected'] = 'Se ha detectado una palabra no permitida en tu nombre.',
-    ['loading_data'] = 'Cargando información del jugador...'
+    ['loading_data'] = 'Cargando información del jugador...',
+    ['ui_visible'] = 'VISIBLE',
+    ['ui_hidden'] = 'OCULTO',
+    ['ui_hide_locked_preview'] = 'Vista previa del selector',
+    ['ui_hide_locked_switch'] = 'Ocultar slots vacíos',
+    ['ui_hide_locked_hint'] = 'Los slots vacíos se ocultarán del selector y solo verás tus personajes creados.',
+    ['ui_hide_locked_on'] = 'Solo personajes creados',
+    ['ui_hide_locked_off'] = 'Slots vacíos fuera del selector',
+    ['ui_sound_volume'] = 'Volumen de interfaz',
+    ['ui_sound_test'] = 'Probar sonido',
+    ['ui_sound_off'] = 'Sonidos desactivados',
+    ['ui_sound_level'] = 'Volumen al %s%'
 }
 
 DebugPrint("Diccionario de idioma Español ('es') registrado correctamente.")

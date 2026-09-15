@@ -54,7 +54,18 @@ Locales['de'] = {
     ['char_deleted'] = 'Charakter aus der Datenbank gelöscht.',
     ['invalid_name'] = 'Der Vor- oder Nachname enthält ungültige Zeichen.',
     ['profanity_detected'] = 'Es wurde ein unzulässiges Wort in deinem Namen gefunden.',
-    ['loading_data'] = 'Spielerdaten werden geladen...'
+    ['loading_data'] = 'Spielerdaten werden geladen...',
+    ['ui_visible'] = 'SICHTBAR',
+    ['ui_hidden'] = 'VERSTECKT',
+    ['ui_hide_locked_preview'] = 'Vorschau des Auswahlmenüs',
+    ['ui_hide_locked_switch'] = 'Leere Slots ausblenden',
+    ['ui_hide_locked_hint'] = 'Leere Slots werden aus dem Auswahlmenü ausgeblendet und du siehst nur deine erstellten Charaktere.',
+    ['ui_hide_locked_on'] = 'Nur erstellte Charaktere',
+    ['ui_hide_locked_off'] = 'Leere Slots außerhalb des Auswahlmenüs',
+    ['ui_sound_volume'] = 'Interface-Lautstärke',
+    ['ui_sound_test'] = 'Ton testen',
+    ['ui_sound_off'] = 'Sounds deaktiviert',
+    ['ui_sound_level'] = 'Lautstärke bei %s%'
 }
 
 DebugPrint("Deutsches Wörterbuch ('de') erfolgreich registriert.")

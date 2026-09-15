@@ -1,868 +1,866 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>DP-MultiCharacter</title>
 
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-    <link rel="stylesheet" href="style.css" />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
-    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src='https://unpkg.com/axios/dist/axios.min.js'></script>
 
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
-  </head>
+</head>
 
-  <body>
+<body>
     <!-- Container principal (oculto por defecto hasta que Lua lo active) -->
-    <div id="app" style="display: none">
-      <!-- PANTALLA DE INICIO (Landing) -->
-      <div id="landing-screen" class="screen-container">
-        <!-- Fondos descriptivos con efectos dinámicos -->
-        <div class="landing-bg-container">
-          <div class="landing-bg" id="bg-1"></div>
-          <div class="landing-bg" id="bg-2"></div>
-          <div class="landing-bg" id="bg-3"></div>
-        </div>
-
-        <!-- CONTENEDORES DE IMÁGENES SUPERIORES -->
-        <div class="landing-images-container">
-          <div class="landing-image-card" id="img-card-1">
-            <div class="card-image"></div>
-            <span class="label-character-name" id="last-character-name"></span>
-            <div class="image-label">
-              <span class="label-title" data-trans="ui_continue_story_title"
-                >[ui_continue_story_title]</span
-              >
-              <span class="label-subtitle" data-trans="ui_continue_story_desc"
-                >[ui_continue_story_desc]</span
-              >
-            </div>
-          </div>
-          <div class="landing-image-card active" id="img-card-2">
-            <div class="card-image"></div>
-            <div class="image-label">
-              <span class="label-title" data-trans="ui_characters_title"
-                >[ui_characters_title]</span
-              >
-              <span class="label-subtitle" data-trans="ui_characters_desc"
-                >[ui_characters_desc]</span
-              >
-            </div>
-          </div>
-          <div class="landing-image-card" id="img-card-3">
-            <div class="card-image"></div>
-            <div class="image-label">
-              <span class="label-title" data-trans="ui_options_title">[ui_options_title]</span>
-              <span class="label-subtitle" data-trans="ui_options_desc"
-                >[ui_options_desc]</span
-              >
-            </div>
-          </div>
-        </div>
-
-        <!-- REFLEJO INFERIOR DETRÁS DE LOS BOTONES -->
-        <div class="landing-reflection-container">
-          <div class="landing-reflection-card" id="ref-card-1">
-            <div class="card-image"></div>
-          </div>
-          <div class="landing-reflection-card active" id="ref-card-2">
-            <div class="card-image"></div>
-          </div>
-          <div class="landing-reflection-card" id="ref-card-3">
-            <div class="card-image"></div>
-          </div>
-        </div>
-
-        <!-- Botones Inferiores -->
-        <div class="landing-buttons-container">
-          <button
-            class="land-btn disabled"
-            id="btn-land-play"
-            data-target="bg-1"
-            data-card="img-card-1">
-            <span id="text-last-char" data-trans="ui_continue_button"
-              >[ui_continue_button]</span
-            >
-          </button>
-          <button
-            class="land-btn active"
-            id="btn-land-chars"
-            data-target="bg-2"
-            data-card="img-card-2"
-            data-trans="ui_characters_button">
-            [ui_characters_button]
-          </button>
-          <button
-            class="land-btn"
-            id="btn-land-options"
-            data-target="bg-3"
-            data-card="img-card-3"
-            data-trans="ui_options_button">
-            [ui_options_button]
-          </button>
-        </div>
-
-        <!-- Footer Controles -->
-        <div class="landing-footer">
-          <div class="control-item">
-            <div class="key-box">◀▶</div>
-            <span data-trans="ui_move">[ui_move]</span>
-          </div>
-          <div class="control-item">
-            <div class="key-box">↵</div>
-            <span data-trans="ui_select">[ui_select]</span>
-          </div>
-          <div class="control-item">
-            <div class="key-box">ESC</div>
-            <span data-trans="ui_exit">[ui_exit]</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- PANTALLA PRINCIPAL: Lista de Personajes -->
-      <div id="character-list" class="screen-container" style="display: none">
-        <div class="top-title" data-trans="ui_select_character">[ui_select_character]</div>
-
-        <div class="slots-container horizontal-layout" id="slots-wrapper">
-          <!-- Los slots se generarán dinámicamente desde JS -->
-        </div>
-
-        <!-- === PANEL DETALLADO === -->
-        <div class="detailed-info-panel hidden" id="detailed-char-info">
-          <!-- HEADER -->
-          <div class="panel-header">
-            <span class="panel-title">
-              <i class="fas fa-id-card" style="margin-right: 8px"></i>
-              <span data-trans="ui_profile">[ui_profile]</span>
-            </span>
-            <span class="panel-status">
-              <span class="dot"></span> <span data-trans="ui_online">[ui_online]</span>
-            </span>
-          </div>
-
-          <!-- CUERPO -->
-          <div class="panel-body">
-            <!-- Identidad -->
-            <div class="info-group">
-              <div class="info-title" data-trans="ui_identity">[ui_identity]</div>
-              <div class="info-row">
-                <i class="fas fa-user"></i>
-                <span class="info-value" id="det-name">---</span>
-              </div>
-              <div class="info-row">
-                <i class="fas fa-calendar-alt"></i>
-                <span class="info-value" id="det-dob">---</span>
-              </div>
-              <div class="info-row">
-                <i class="fas fa-globe-americas"></i>
-                <span class="info-value" id="det-nat">---</span>
-              </div>
-              <div class="info-row">
-                <i class="fas fa-venus-mars"></i>
-                <span class="info-value" id="det-gender">---</span>
-              </div>
+    <div id="app" style="display: none;">
+        <!-- PANTALLA DE INICIO (Landing) -->
+        <div id="landing-screen" class="screen-container">
+            <!-- Fondos descriptivos con efectos dinámicos -->
+            <div class="landing-bg-container">
+                <div class="landing-bg" id="bg-1"></div>
+                <div class="landing-bg" id="bg-2"></div>
+                <div class="landing-bg" id="bg-3"></div>
             </div>
 
-            <!-- Economía y Contacto -->
-            <div class="info-group">
-              <div class="info-title" data-trans="ui_economy_contact">
-                [ui_economy_contact]
-              </div>
-              <div class="info-row">
-                <i class="fas fa-wallet"></i>
-                <span class="info-value" id="det-cash">---</span>
-              </div>
-              <div class="info-row">
-                <i class="fas fa-university"></i>
-                <span class="info-value" id="det-bank">---</span>
-              </div>
-              <div class="info-row">
-                <i class="fas fa-mobile-alt"></i>
-                <span class="info-value" id="det-phone">---</span>
-              </div>
+            <!-- CONTENEDORES DE IMÁGENES SUPERIORES -->
+            <div class="landing-images-container">
+                <div class="landing-image-card" id="img-card-1">
+                    <div class="card-image"></div>
+                    <span class="label-character-name" id="last-character-name"></span>
+                    <div class="image-label">
+                        <span class="label-title" data-trans="ui_continue_story_title">[ui_continue_story_title]</span>
+                        <span class="label-subtitle" data-trans="ui_continue_story_desc">[ui_continue_story_desc]</span>
+                    </div>
+                </div>
+                <div class="landing-image-card active" id="img-card-2">
+                    <div class="card-image"></div>
+                    <div class="image-label">
+                        <span class="label-title" data-trans="ui_characters_title">[ui_characters_title]</span>
+                        <span class="label-subtitle" data-trans="ui_characters_desc">[ui_characters_desc]</span>
+                    </div>
+                </div>
+                <div class="landing-image-card" id="img-card-3">
+                    <div class="card-image"></div>
+                    <div class="image-label">
+                        <span class="label-title" data-trans="ui_options_title">[ui_options_title]</span>
+                        <span class="label-subtitle" data-trans="ui_options_desc">[ui_options_desc]</span>
+                    </div>
+                </div>
             </div>
 
-            <!-- Afiliaciones -->
-            <div class="info-group" id="group-factions">
-              <div class="info-title" data-trans="ui_affiliations">[ui_affiliations]</div>
-              <div class="info-row" id="row-job" style="display: none">
-                <i class="fas fa-briefcase"></i>
-                <span class="info-value" id="det-job">---</span>
-              </div>
-              <div class="info-row" id="row-gang" style="display: none">
-                <i class="fas fa-skull"></i>
-                <span class="info-value" id="det-gang">---</span>
-              </div>
+            <!-- REFLEJO INFERIOR DETRÁS DE LOS BOTONES -->
+            <div class="landing-reflection-container">
+                <div class="landing-reflection-card" id="ref-card-1">
+                    <div class="card-image"></div>
+                </div>
+                <div class="landing-reflection-card active" id="ref-card-2">
+                    <div class="card-image"></div>
+                </div>
+                <div class="landing-reflection-card" id="ref-card-3">
+                    <div class="card-image"></div>
+                </div>
             </div>
 
-            <!-- Habilidades -->
-            <div class="info-group" id="group-skills" style="display: none">
-              <div class="info-title" data-trans="ui_skills">[ui_skills]</div>
-              <div id="det-skills-container"></div>
+            <!-- Botones Inferiores -->
+            <div class="landing-buttons-container">
+                <button class="land-btn disabled" id="btn-land-play" data-target="bg-1" data-card="img-card-1">
+                    <span id="text-last-char" data-trans="ui_continue_button">[ui_continue_button]</span>
+                </button>
+                <button class="land-btn active" id="btn-land-chars" data-target="bg-2" data-card="img-card-2"
+                    data-trans="ui_characters_button">
+                    [ui_characters_button]
+                </button>
+                <button class="land-btn" id="btn-land-options" data-target="bg-3" data-card="img-card-3"
+                    data-trans="ui_options_button">
+                    [ui_options_button]
+                </button>
             </div>
 
-            <!-- Actividad -->
-            <div
-              class="info-group"
-              style="border-bottom: none; margin-bottom: 0; padding-bottom: 0">
-              <div class="info-title" data-trans="ui_activity">[ui_activity]</div>
-              <div class="info-row">
-                <i class="fas fa-clock"></i>
-                <span class="info-value"
-                  ><span data-trans="ui_playtime">[ui_playtime]</span>
-                  <strong id="det-playtime">---</strong></span
-                >
-              </div>
-              <div class="info-row" style="margin-bottom: 0">
-                <i class="fas fa-sign-in-alt"></i>
-                <span class="info-value"
-                  ><span data-trans="ui_last_seen">[ui_last_seen]</span>
-                  <strong id="det-lastseen">---</strong></span
-                >
-              </div>
+            <!-- Footer Controles -->
+            <div class="landing-footer">
+                <div class="control-item">
+                    <div class="key-box">◀▶</div> <span data-trans="ui_move">[ui_move]</span>
+                </div>
+                <div class="control-item">
+                    <div class="key-box">↵</div> <span data-trans="ui_select">[ui_select]</span>
+                </div>
+                <div class="control-item">
+                    <div class="key-box">ESC</div> <span data-trans="ui_exit">[ui_exit]</span>
+                </div>
             </div>
-          </div>
         </div>
 
-        <!-- Botonera central -->
-        <div class="bottom-center-action" id="action-buttons" style="display: none">
-          <div class="action-header" id="action-header-text" data-trans="ui_new_character">
-            [ui_new_character]
-          </div>
-          <div class="action-row">
-            <div class="action-arrows-left">◀</div>
-            <button class="action-btn" id="main-action-btn">
-              <span class="key-hint">↵</span>
-              <span id="action-btn-text" data-trans="ui_create">[ui_create]</span>
-            </button>
-            <div class="action-arrows-right">▶</div>
-          </div>
-        </div>
+        <!-- PANTALLA PRINCIPAL: Lista de Personajes -->
+        <div id="character-list" class="screen-container" style="display: none;">
+            <div class="top-title" data-trans="ui_select_character">[ui_select_character]</div>
 
-        <!-- Controles abajo a la derecha -->
-        <div class="character-footer">
-          <div class="control-item" id="footer-move" style="display: none">
-            <div class="key-box">◀ ▶</div>
-            <span data-trans="ui_move">[ui_move]</span>
-          </div>
-          <div class="control-item" id="footer-select" style="display: none">
-            <div class="key-box">↵</div>
-            <span data-trans="ui_select">[ui_select]</span>
-          </div>
-          <div class="control-item">
-            <div class="key-box">ESC</div>
-            <span data-trans="ui_exit">[ui_exit]</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- PANTALLA DE OPCIONES / CONFIGURACIÓN -->
-      <div id="options-screen" class="screen-container" style="display: none">
-        <!-- Fondo dinámico idéntico al landing con partículas -->
-        <div class="landing-bg-container">
-          <div class="landing-bg show" id="bg-options"></div>
-        </div>
-
-        <!-- Contenedor principal -->
-        <div class="options-wrapper">
-          <!-- HEADER SUPERIOR -->
-          <header class="options-header">
-            <div class="options-header-left">
-              <span class="options-eyebrow">DP-MULTICHARACTER</span>
-              <h2 data-trans="ui_options_title">OPCIONES</h2>
+            <div class="slots-container horizontal-layout" id="slots-wrapper">
+                <!-- Los slots se generarán dinámicamente desde JS -->
             </div>
-          </header>
 
-          <!-- CUERPO: SIDEBAR + TABLA -->
-          <div class="options-body">
-            <!-- ============ SIDEBAR IZQUIERDO ============ -->
-            <aside class="options-sidebar">
-              <!--   ZONA SCROLLEABLE: BLOQUES   -->
-              <div class="sidebar-scroll">
-                <!--  PERSONAJES -->
-                <div class="sidebar-block">
-                  <div class="sidebar-block-header">
-                    <span class="sidebar-block-dot"></span>
-                    <h3 data-trans="ui_characters_block">PERSONAJES</h3>
-                  </div>
-
-                  <button class="sidebar-item" id="btn-buy-slot">
-                    <div class="sidebar-item-icon"><i class="fas fa-plus-square"></i></div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_buy_slots"
-                        >Comprar Slots Adicionales</span
-                      >
-                      <span class="sidebar-item-sub">Amplía tu límite de personajes</span>
-                    </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
-
-                  <button class="sidebar-item" id="btn-restore-char">
-                    <div class="sidebar-item-icon">
-                      <i class="fas fa-clock-rotate-left"></i>
-                    </div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_restore_char"
-                        >Restaurar Personaje</span
-                      >
-                      <span class="sidebar-item-sub">Recupera un personaje borrado</span>
-                    </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
-
-                  <button class="sidebar-item" id="btn-export-char">
-                    <div class="sidebar-item-icon"><i class="fas fa-file-export"></i></div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_export_char"
-                        >Exportar Personajes</span
-                      >
-                      <span class="sidebar-item-sub">Guarda un backup multiple</span>
-                    </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
-
-                  <button class="sidebar-item" id="btn-import-char">
-                    <div class="sidebar-item-icon"><i class="fas fa-file-import"></i></div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_import_char"
-                        >Importar Personaje</span
-                      >
-                      <span class="sidebar-item-sub">Restaura un backup previo</span>
-                    </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
+            <!-- === PANEL DETALLADO === -->
+            <div class="detailed-info-panel hidden" id="detailed-char-info">
+                <!-- HEADER -->
+                <div class="panel-header">
+                    <span class="panel-title">
+                        <i class="fas fa-id-card" style="margin-right: 8px;"></i> <span
+                            data-trans="ui_profile">[ui_profile]</span>
+                    </span>
+                    <span class="panel-status">
+                        <span class="dot"></span> <span data-trans="ui_online">[ui_online]</span>
+                    </span>
                 </div>
 
-                <!-- PREFERENCIAS -->
-                <div class="sidebar-block">
-                  <div class="sidebar-block-header">
-                    <span class="sidebar-block-dot"></span>
-                    <h3 data-trans="ui_preferences_block">PREFERENCIAS</h3>
-                  </div>
-
-                  <button class="sidebar-item" id="btn-spawn-pref">
-                    <div class="sidebar-item-icon">
-                      <i class="fas fa-map-location-dot"></i>
+                <!-- CUERPO -->
+                <div class="panel-body">
+                    <!-- Identidad -->
+                    <div class="info-group">
+                        <div class="info-title" data-trans="ui_identity">[ui_identity]</div>
+                        <div class="info-row">
+                            <i class="fas fa-user"></i>
+                            <span class="info-value" id="det-name">---</span>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-calendar-alt"></i>
+                            <span class="info-value" id="det-dob">---</span>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-globe-americas"></i>
+                            <span class="info-value" id="det-nat">---</span>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-venus-mars"></i>
+                            <span class="info-value" id="det-gender">---</span>
+                        </div>
                     </div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_spawn_pref"
-                        >Spawn Preferido</span
-                      >
-                      <span class="sidebar-item-sub">Última ubicación vs. punto fijo</span>
+
+                    <!-- Economía y Contacto -->
+                    <div class="info-group">
+                        <div class="info-title" data-trans="ui_economy_contact">[ui_economy_contact]</div>
+                        <div class="info-row">
+                            <i class="fas fa-wallet"></i>
+                            <span class="info-value" id="det-cash">---</span>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-university"></i>
+                            <span class="info-value" id="det-bank">---</span>
+                        </div>
+                        <div class="info-row">
+                            <i class="fas fa-mobile-alt"></i>
+                            <span class="info-value" id="det-phone">---</span>
+                        </div>
                     </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
 
-                  <button class="sidebar-item" id="btn-hide-locked">
-                    <div class="sidebar-item-icon"><i class="fas fa-eye-slash"></i></div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_hide_locked"
-                        >Ocultar Bloqueados</span
-                      >
-                      <span class="sidebar-item-sub">Slots vacíos fuera del selector</span>
+                    <!-- Afiliaciones -->
+                    <div class="info-group" id="group-factions">
+                        <div class="info-title" data-trans="ui_affiliations">[ui_affiliations]</div>
+                        <div class="info-row" id="row-job" style="display: none;">
+                            <i class="fas fa-briefcase"></i>
+                            <span class="info-value" id="det-job">---</span>
+                        </div>
+                        <div class="info-row" id="row-gang" style="display: none;">
+                            <i class="fas fa-skull"></i>
+                            <span class="info-value" id="det-gang">---</span>
+                        </div>
                     </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
 
-                  <button class="sidebar-item" id="btn-sound-toggle">
-                    <div class="sidebar-item-icon"><i class="fas fa-volume-high"></i></div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_sound_toggle"
-                        >Sonidos de Interfaz</span
-                      >
-                      <span class="sidebar-item-sub">Activar/desactivar clicks y hovers</span>
+                    <!-- Habilidades -->
+                    <div class="info-group" id="group-skills" style="display: none;">
+                        <div class="info-title" data-trans="ui_skills">[ui_skills]</div>
+                        <div id="det-skills-container"></div>
                     </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
-                </div>
 
-                <!-- SOPORTE -->
-                <div class="sidebar-block">
-                  <div class="sidebar-block-header">
-                    <span class="sidebar-block-dot"></span>
-                    <h3 data-trans="ui_support_block">SOPORTE</h3>
-                  </div>
-
-                  <button class="sidebar-item" id="btn-report-bug">
-                    <div class="sidebar-item-icon"><i class="fas fa-bug"></i></div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_report_bug"
-                        >Reportar un Bug</span
-                      >
-                      <span class="sidebar-item-sub">Soporte técnico</span>
+                    <!-- Actividad -->
+                    <div class="info-group" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
+                        <div class="info-title" data-trans="ui_activity">[ui_activity]</div>
+                        <div class="info-row">
+                            <i class="fas fa-clock"></i>
+                            <span class="info-value"><span data-trans="ui_playtime">[ui_playtime]</span> <strong
+                                    id="det-playtime">---</strong></span>
+                        </div>
+                        <div class="info-row" style="margin-bottom: 0;">
+                            <i class="fas fa-sign-in-alt"></i>
+                            <span class="info-value"><span data-trans="ui_last_seen">[ui_last_seen]</span> <strong
+                                    id="det-lastseen">---</strong></span>
+                        </div>
                     </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
-
-                  <button class="sidebar-item" id="btn-discord">
-                    <div class="sidebar-item-icon"><i class="fab fa-discord"></i></div>
-                    <div class="sidebar-item-content">
-                      <span class="sidebar-item-title" data-trans="ui_discord"
-                        >Discord / Ayuda</span
-                      >
-                      <span class="sidebar-item-sub">Únete a la comunidad</span>
-                    </div>
-                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
-                  </button>
                 </div>
-              </div>
+            </div>
 
-              <!--   ESTADÍSTICAS   -->
-              <div class="sidebar-block sidebar-stats">
-                <div class="sidebar-block-header">
-                  <span class="sidebar-block-dot"></span>
-                  <h3>ESTADÍSTICAS</h3>
+            <!-- Botonera central -->
+            <div class="bottom-center-action" id="action-buttons" style="display: none;">
+                <div class="action-header" id="action-header-text" data-trans="ui_new_character">[ui_new_character]
                 </div>
+                <div class="action-row">
+                    <div class="action-arrows-left">◀</div>
+                    <button class="action-btn" id="main-action-btn">
+                        <span class="key-hint">↵</span> <span id="action-btn-text"
+                            data-trans="ui_create">[ui_create]</span>
+                    </button>
+                    <div class="action-arrows-right">▶</div>
+                </div>
+            </div>
 
-                <div class="stat-row">
-                  <span class="stat-label">Personajes activos</span>
-                  <span class="stat-value" id="stat-active-chars">0</span>
-                </div>
-                <div class="stat-row">
-                  <span class="stat-label">Slots disponibles</span>
-                  <span class="stat-value" id="stat-available-slots">0</span>
-                </div>
-                <div class="stat-row">
-                  <span class="stat-label">Slots totales</span>
-                  <span class="stat-value" id="stat-total-slots">0</span>
-                </div>
-              </div>
-            </aside>
-
-            <!-- ============ TABLA DE PERSONAJES ============ -->
-            <main class="options-main">
-              <div class="options-main-header">
-                <div class="options-main-title">
-                  <h3 data-trans="ui_my_characters">MIS PERSONAJES</h3>
-                  <span class="options-main-hint">
-                    <i class="fas fa-grip-vertical"></i>
-                    Arrastra para reordenar
-                  </span>
-                </div>
-
-                <div class="options-main-tools">
-                  <div class="search-box">
-                    <i class="fas fa-search"></i>
-                    <input
-                      type="text"
-                      id="table-search"
-                      placeholder="Buscar personaje..."
-                      autocomplete="off" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Tabla custom -->
-              <div class="characters-table-wrapper">
-                <table class="characters-table" id="options-characters-table">
-                  <thead>
-                    <tr>
-                      <th class="col-drag" style="padding-left: 27px; font-size: small">
-                        <i class="fa-solid fa-arrows-up-down"></i>
-                      </th>
-                      <th class="col-slot" data-sort="cid">
-                        <span>SLOT</span>
-                        <i class="fas fa-sort sort-icon"></i>
-                      </th>
-                      <th class="col-name" data-sort="name">
-                        <span>NOMBRE</span>
-                        <i class="fas fa-sort sort-icon"></i>
-                      </th>
-                      <th class="col-citizen" data-sort="citizenid">
-                        <span>CITIZENID</span>
-                        <i class="fas fa-sort sort-icon"></i>
-                      </th>
-                      <th class="col-actions">
-                        <span>ACCIONES</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody id="options-characters-tbody">
-                    <!-- Se rellenará dinámicamente desde JS -->
-                  </tbody>
-                </table>
-
-                <div class="table-empty-state" id="table-empty-state" style="display: none">
-                  <i class="fas fa-user-slash"></i>
-                  <p>No hay personajes que mostrar</p>
-                </div>
-              </div>
-            </main>
-          </div>
-
-          <!-- FOOTER -->
-          <footer class="options-footer">
             <!-- Controles abajo a la derecha -->
             <div class="character-footer">
-              <div class="control-item">
-                <div class="key-box">ESC</div>
-                <span data-trans="ui_exit">[ui_exit]</span>
-              </div>
-            </div>
-          </footer>
-        </div>
-      </div>
-
-      <!-- PANTALLA DE REGISTRO: Crear Personaje -->
-      <div id="character-register" class="screen-container" style="display: none">
-        <div class="register-card">
-          <h2 data-trans="ui_create_character_title">[ui_create_character_title]</h2>
-
-          <div class="input-group">
-            <label for="reg-firstname" data-trans="ui_firstname">[ui_firstname]</label>
-            <input
-              type="text"
-              id="reg-firstname"
-              data-trans-placeholder="ui_placeholder_firstname"
-              placeholder="[ui_placeholder_firstname]"
-              autocomplete="off"
-              maxlength="30" />
-          </div>
-
-          <div class="input-group">
-            <label for="reg-lastname" data-trans="ui_lastname">[ui_lastname]</label>
-            <input
-              type="text"
-              id="reg-lastname"
-              data-trans-placeholder="ui_placeholder_lastname"
-              placeholder="[ui_placeholder_lastname]"
-              autocomplete="off"
-              maxlength="40" />
-          </div>
-
-          <!-- Selector Custom de Nacionalidad -->
-          <div class="input-group">
-            <label data-trans="ui_nationality">NATIONALITY</label>
-            <div class="custom-select-wrapper" id="nationality-wrapper">
-              <!-- Botón principal (Placeholder) -->
-              <div class="custom-select-display" id="nationality-display">
-                <span class="material-symbols-outlined">language</span>
-                <span class="display-text" id="nationality-text" data-trans="ui_search_country"
-                  >Search for your country</span
-                >
-                <span class="material-symbols-outlined dropdown-icon">expand_more</span>
-              </div>
-
-              <!-- Desplegable -->
-              <div class="custom-select-dropdown hidden" id="nationality-dropdown">
-                <!-- Buscador fijo (Sticky) -->
-                <div class="dropdown-search-sticky">
-                  <span class="material-symbols-outlined">search</span>
-                  <input
-                    type="text"
-                    id="nationality-search"
-                    placeholder="Search..."
-                    autocomplete="off" />
+                <div class="control-item" id="footer-move" style="display: none;">
+                    <div class="key-box">◀ ▶</div> <span data-trans="ui_move">[ui_move]</span>
                 </div>
-                <!-- Opciones (Rellenadas con JS) -->
-                <div class="dropdown-options" id="nationality-options">
-                  <!-- Ej: <div class="dropdown-option" data-id="es"><img src="url" class="flag-icon"> España</div> -->
+                <div class="control-item" id="footer-select" style="display: none;">
+                    <div class="key-box">↵</div> <span data-trans="ui_select">[ui_select]</span>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="input-group">
-            <label for="reg-dob" data-trans="ui_birthdate">[ui_birthdate]</label>
-            <input
-              type="text"
-              id="reg-dob"
-              placeholder="YYYY-MM-DD"
-              readonly
-              style="cursor: pointer" />
-          </div>
-
-          <div class="input-group">
-            <label data-trans="ui_gender">[ui_gender]</label>
-            <div class="gender-selector">
-              <div class="gender-btn" data-gender="Masculino">
-                <span class="material-symbols-outlined">male</span>
-                <span data-trans="ui_male">[ui_male]</span>
-              </div>
-              <div class="gender-btn" data-gender="Femenino">
-                <span class="material-symbols-outlined">female</span>
-                <span data-trans="ui_female">[ui_female]</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="register-actions">
-            <button id="btn-cancel-reg" class="btn-secondary" data-trans="ui_cancel">
-              [ui_cancel]
-            </button>
-            <button id="btn-create-reg" class="btn-primary" data-trans="ui_create">
-              [ui_create]
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- MODAL CONFIRMACIÓN DE BORRADO -->
-      <div id="delete-modal" class="modal-overlay" style="display: none">
-        <div class="modal-content">
-          <div class="modal-glow"></div>
-          <i class="fas fa-exclamation-triangle warning-icon"></i>
-          <h3 data-trans="ui_delete_title">[ui_delete_title]</h3>
-          <p data-trans="ui_delete_warning">[ui_delete_warning]</p>
-          <div class="modal-actions">
-            <button
-              id="btn-modal-cancel"
-              class="btn-modal btn-modal-cancel"
-              data-trans="ui_cancel">
-              [ui_cancel]
-            </button>
-            <button
-              id="btn-modal-confirm"
-              class="btn-modal btn-modal-confirm"
-              data-trans="ui_delete_confirm_btn">
-              [ui_delete_confirm_btn]
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Comprar Slots -->
-      <div id="modal-buy-slots" class="modal-overlay" style="display: none">
-        <div class="modal-content">
-          <div class="modal-glow"></div>
-          <i class="fas fa-plus-square modal-icon"></i>
-          <h3>COMPRAR SLOTS</h3>
-          <p>Amplía tu límite de personajes.</p>
-          <div class="modal-body">
-            <!-- Contenido inyectable -->
-          </div>
-          <div class="modal-actions">
-            <button class="btn-modal btn-modal-cancel">
-              <i class="fas fa-times"></i> CERRAR
-            </button>
-            <button class="btn-modal btn-modal-primary">
-              <i class="fas fa-check"></i> CONTINUAR
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Restaurar Personaje -->
-      <div id="modal-restore-char" class="modal-overlay" style="display: none">
-        <div class="modal-content">
-          <div class="modal-glow"></div>
-          <i class="fas fa-clock-rotate-left modal-icon"></i>
-          <h3>RESTAURAR PERSONAJE</h3>
-          <p>Recupera un personaje borrado.</p>
-          <div class="modal-body"></div>
-          <div class="modal-actions">
-            <button class="btn-modal btn-modal-cancel">
-              <i class="fas fa-times"></i> CERRAR
-            </button>
-            <button class="btn-modal btn-modal-primary">
-              <i class="fas fa-check"></i> RESTAURAR
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Exportar / Importar Personaje (modal único, reusable para ambos botones del sidebar) -->
-      <!-- data-mode se actualiza vía JS a "export" o "import" según el botón que lo abrió -->
-      <div
-        id="modal-export-import"
-        class="modal-overlay"
-        style="display: none"
-        data-mode="export">
-        <div class="modal-content modal-content-wide">
-          <div class="modal-glow"></div>
-
-          <!-- Cabecera: icono y título cambian según el modo (export/import) -->
-          <i class="fas fa-file-export modal-icon" id="expimp-icon"></i>
-          <h3 id="expimp-title">EXPORTAR PERSONAJES</h3>
-          <p id="expimp-subtitle">Guarda un backup multiple de los personajes seleccionados.</p>
-
-          <div class="modal-body">
-            <div class="expimp-panel">
-              <!-- Columna izquierda: selector de formato (toggle tipo pestañas) -->
-              <div class="expimp-col expimp-col-left">
-                <span class="expimp-col-label">Formato</span>
-                <div class="expimp-format-toggle">
-                  <button type="button" class="expimp-format-btn active" data-format="json">
-                    <i class="fas fa-file-code"></i> JSON
-                  </button>
-                  <button type="button" class="expimp-format-btn" data-format="xml">
-                    <i class="fas fa-file-code"></i> XML
-                  </button>
+                <div class="control-item">
+                    <div class="key-box">ESC</div> <span data-trans="ui_exit">[ui_exit]</span>
                 </div>
-              </div>
+            </div>
+        </div>
 
-              <!-- Columna derecha: -->
-              <!-- En modo EXPORT muestra el código generado (solo lectura) -->
-              <!-- En modo IMPORT muestra un textarea para pegar el código -->
-              <div class="expimp-col expimp-col-right">
-                <div class="expimp-output-header">
-                  <span class="expimp-col-label" id="expimp-output-label"
-                    >Código generado</span
-                  >
-                  <button
-                    type="button"
-                    class="expimp-copy-btn"
-                    id="expimp-copy-btn"
-                    title="Copiar al portapapeles">
-                    <i class="fas fa-copy"></i>
-                  </button>
+        <!-- PANTALLA DE OPCIONES / CONFIGURACIÓN -->
+        <div id="options-screen" class="screen-container" style="display: none;">
+            <!-- Fondo dinámico idéntico al landing con partículas -->
+            <div class="landing-bg-container">
+                <div class="landing-bg show" id="bg-options"></div>
+            </div>
+
+            <!-- Contenedor principal -->
+            <div class="options-wrapper">
+                <!-- HEADER SUPERIOR -->
+                <header class="options-header">
+                    <div class="options-header-left">
+                        <span class="options-eyebrow">DP-MULTICHARACTER</span>
+                        <h2 data-trans="ui_options_title">OPCIONES</h2>
+                    </div>
+                </header>
+
+                <!-- CUERPO: SIDEBAR + TABLA -->
+                <div class="options-body">
+                    <!-- ============ SIDEBAR IZQUIERDO ============ -->
+                    <aside class="options-sidebar">
+                        <!--   ZONA SCROLLEABLE: BLOQUES   -->
+                        <div class="sidebar-scroll">
+                            <!--  PERSONAJES -->
+                            <div class="sidebar-block">
+                                <div class="sidebar-block-header">
+                                    <span class="sidebar-block-dot"></span>
+                                    <h3 data-trans="ui_characters_block">PERSONAJES</h3>
+                                </div>
+
+                                <button class="sidebar-item" id="btn-buy-slot">
+                                    <div class="sidebar-item-icon"><i class="fas fa-plus-square"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_buy_slots">Comprar Slots
+                                            Adicionales</span>
+                                        <span class="sidebar-item-sub">Amplía tu límite de personajes</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+
+                                <button class="sidebar-item" id="btn-restore-char">
+                                    <div class="sidebar-item-icon"><i class="fas fa-clock-rotate-left"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_restore_char">Restaurar
+                                            Personaje</span>
+                                        <span class="sidebar-item-sub">Recupera un personaje borrado</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+
+                                <button class="sidebar-item" id="btn-export-char">
+                                    <div class="sidebar-item-icon"><i class="fas fa-file-export"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_export_char">Exportar
+                                            Personaje</span>
+                                        <span class="sidebar-item-sub">Guarda un backup individual</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+
+                                <button class="sidebar-item" id="btn-import-char">
+                                    <div class="sidebar-item-icon"><i class="fas fa-file-import"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_import_char">Importar
+                                            Personaje</span>
+                                        <span class="sidebar-item-sub">Restaura un backup previo</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+                            </div>
+
+                            <!-- PREFERENCIAS -->
+                            <div class="sidebar-block">
+                                <div class="sidebar-block-header">
+                                    <span class="sidebar-block-dot"></span>
+                                    <h3 data-trans="ui_preferences_block">PREFERENCIAS</h3>
+                                </div>
+
+                                <button class="sidebar-item" id="btn-spawn-pref">
+                                    <div class="sidebar-item-icon"><i class="fas fa-map-location-dot"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_spawn_pref">Spawn
+                                            Preferido</span>
+                                        <span class="sidebar-item-sub">Última ubicación vs. punto fijo</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+
+                                <button class="sidebar-item" id="btn-hide-locked">
+                                    <div class="sidebar-item-icon"><i class="fas fa-eye-slash"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_hide_locked">Ocultar
+                                            Bloqueados</span>
+                                        <span class="sidebar-item-sub" id="hide-locked-sub">Slots vacíos fuera del selector</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+
+                                <button class="sidebar-item" id="btn-sound-toggle">
+                                    <div class="sidebar-item-icon"><i class="fas fa-volume-high"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_sound_toggle">Sonidos de
+                                            Interfaz</span>
+                                        <span class="sidebar-item-sub" id="sound-toggle-sub">Activar/desactivar clicks y hovers</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+                            </div>
+
+                            <!-- SOPORTE -->
+                            <div class="sidebar-block">
+                                <div class="sidebar-block-header">
+                                    <span class="sidebar-block-dot"></span>
+                                    <h3 data-trans="ui_support_block">SOPORTE</h3>
+                                </div>
+
+                                <button class="sidebar-item" id="btn-report-bug">
+                                    <div class="sidebar-item-icon"><i class="fas fa-bug"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_report_bug">Reportar un
+                                            Bug</span>
+                                        <span class="sidebar-item-sub">Soporte técnico</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+
+                                <button class="sidebar-item" id="btn-discord">
+                                    <div class="sidebar-item-icon"><i class="fab fa-discord"></i></div>
+                                    <div class="sidebar-item-content">
+                                        <span class="sidebar-item-title" data-trans="ui_discord">Discord / Ayuda</span>
+                                        <span class="sidebar-item-sub">Únete a la comunidad</span>
+                                    </div>
+                                    <i class="fas fa-chevron-right sidebar-item-arrow"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!--   ESTADÍSTICAS   -->
+                        <div class="sidebar-block sidebar-stats">
+                            <div class="sidebar-block-header">
+                                <span class="sidebar-block-dot"></span>
+                                <h3>ESTADÍSTICAS</h3>
+                            </div>
+
+                            <div class="stat-row">
+                                <span class="stat-label">Personajes activos</span>
+                                <span class="stat-value" id="stat-active-chars">0</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Slots disponibles</span>
+                                <span class="stat-value" id="stat-available-slots">0</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Slots totales</span>
+                                <span class="stat-value" id="stat-total-slots">0</span>
+                            </div>
+                        </div>
+                    </aside>
+
+                    <!-- ============ TABLA DE PERSONAJES ============ -->
+                    <main class="options-main">
+                        <div class="options-main-header">
+                            <div class="options-main-title">
+                                <h3 data-trans="ui_my_characters">MIS PERSONAJES</h3>
+                                <span class="options-main-hint">
+                                    <i class="fas fa-grip-vertical"></i>
+                                    Arrastra para reordenar
+                                </span>
+                            </div>
+
+                            <div class="options-main-tools">
+                                <div class="search-box">
+                                    <i class="fas fa-search"></i>
+                                    <input type="text" id="table-search" placeholder="Buscar personaje..."
+                                        autocomplete="off">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tabla custom -->
+                        <div class="characters-table-wrapper">
+                            <table class="characters-table" id="options-characters-table">
+                                <thead>
+                                    <tr>
+                                        <th class="col-drag" style="padding-left: 27px; font-size: small;">
+                                            <i class="fa-solid fa-arrows-up-down"></i>
+                                        </th>
+                                        <th class="col-slot" data-sort="cid">
+                                            <span>SLOT</span>
+                                            <i class="fas fa-sort sort-icon"></i>
+                                        </th>
+                                        <th class="col-name" data-sort="name">
+                                            <span>NOMBRE</span>
+                                            <i class="fas fa-sort sort-icon"></i>
+                                        </th>
+                                        <th class="col-citizen" data-sort="citizenid">
+                                            <span>CITIZENID</span>
+                                            <i class="fas fa-sort sort-icon"></i>
+                                        </th>
+                                        <th class="col-actions">
+                                            <span>ACCIONES</span>
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="options-characters-tbody">
+                                    <!-- Se rellenará dinámicamente desde JS -->
+                                </tbody>
+                            </table>
+
+                            <div class="table-empty-state" id="table-empty-state" style="display: none;">
+                                <i class="fas fa-user-slash"></i>
+                                <p>No hay personajes que mostrar</p>
+                            </div>
+                        </div>
+                    </main>
                 </div>
-                <pre
-                  class="expimp-output-code"
-                  id="expimp-output-code"><code id="expimp-output-code-content"></code></pre>
-                <textarea
-                  class="expimp-output-textarea"
-                  id="expimp-output-textarea"
-                  placeholder="Pega aquí tu código..."
-                  style="display: none"></textarea>
-              </div>
+
+                <!-- FOOTER -->
+                <footer class="options-footer">
+                    <!-- Controles abajo a la derecha -->
+                    <div class="character-footer">
+                        <div class="control-item">
+                            <div class="key-box">ESC</div> <span data-trans="ui_exit">[ui_exit]</span>
+                        </div>
+                    </div>
+                </footer>
+
             </div>
-          </div>
-
-          <div class="modal-actions">
-            <button class="btn-modal btn-modal-cancel">
-              <i class="fas fa-times"></i> CERRAR
-            </button>
-            <button class="btn-modal btn-modal-primary" id="expimp-confirm-btn">
-              <i class="fas fa-check"></i> EXPORTAR
-            </button>
-          </div>
         </div>
-      </div>
 
-      <!-- Spawn Preferido -->
-      <div id="modal-spawn-pref" class="modal-overlay" style="display: none">
-        <div class="modal-content">
-          <div class="modal-glow"></div>
-          <i class="fas fa-map-location-dot modal-icon"></i>
-          <h3>SPAWN PREFERIDO</h3>
-          <p>Última ubicación vs. punto fijo.</p>
-          <div class="modal-body"></div>
-          <div class="modal-actions">
-            <button class="btn-modal btn-modal-cancel">
-              <i class="fas fa-times"></i> CERRAR
-            </button>
-            <button class="btn-modal btn-modal-primary">
-              <i class="fas fa-check"></i> GUARDAR
-            </button>
-          </div>
-        </div>
-      </div>
+        <!-- PANTALLA DE REGISTRO: Crear Personaje -->
+        <div id="character-register" class="screen-container" style="display: none;">
+            <div class="register-card">
+                <h2 data-trans="ui_create_character_title">[ui_create_character_title]</h2>
 
-      <!-- Ocultar Bloqueados -->
-      <div id="modal-hide-locked" class="modal-overlay" style="display: none">
-        <div class="modal-content">
-          <div class="modal-glow"></div>
-          <i class="fas fa-eye-slash modal-icon"></i>
-          <h3>OCULTAR BLOQUEADOS</h3>
-          <p>Slots vacíos fuera del selector.</p>
-          <div class="modal-body"></div>
-          <div class="modal-actions">
-            <button class="btn-modal btn-modal-cancel">
-              <i class="fas fa-times"></i> CERRAR
-            </button>
-            <button class="btn-modal btn-modal-primary">
-              <i class="fas fa-check"></i> ACTUALIZAR
-            </button>
-          </div>
-        </div>
-      </div>
+                <div class="input-group">
+                    <label for="reg-firstname" data-trans="ui_firstname">[ui_firstname]</label>
+                    <input type="text" id="reg-firstname" data-trans-placeholder="ui_placeholder_firstname"
+                        placeholder="[ui_placeholder_firstname]" autocomplete="off" maxlength="30">
+                </div>
 
-      <!-- Sonidos de Interfaz -->
-      <div id="modal-sound-toggle" class="modal-overlay" style="display: none">
-        <div class="modal-content">
-          <div class="modal-glow"></div>
-          <i class="fas fa-volume-high modal-icon"></i>
-          <h3>SONIDOS DE INTERFAZ</h3>
-          <p>Activar/desactivar clicks y hovers.</p>
-          <div class="modal-body">
-            <div
-              style="
-                padding: 15px;
-                background: rgba(0, 0, 0, 0.3);
-                border: 1px dashed rgba(255, 255, 255, 0.1);
-                color: #ccc;
-                border-radius: 4px;
-              ">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 10px">
-                <span>Volumen de Interfaz</span>
-                <strong id="sound-volume-value" style="color: #fff">100%</strong>
-              </div>
-              <input
-                type="range"
-                id="sound-volume-slider"
-                min="0"
-                max="100"
-                value="100"
-                style="width: 100%; accent-color: #fff; cursor: pointer" />
+                <div class="input-group">
+                    <label for="reg-lastname" data-trans="ui_lastname">[ui_lastname]</label>
+                    <input type="text" id="reg-lastname" data-trans-placeholder="ui_placeholder_lastname"
+                        placeholder="[ui_placeholder_lastname]" autocomplete="off" maxlength="40">
+                </div>
+
+                <!-- Selector Custom de Nacionalidad -->
+                <div class="input-group">
+                    <label data-trans="ui_nationality">NATIONALITY</label>
+                    <div class="custom-select-wrapper" id="nationality-wrapper">
+                        <!-- Botón principal (Placeholder) -->
+                        <div class="custom-select-display" id="nationality-display">
+                            <span class="material-symbols-outlined">language</span>
+                            <span class="display-text" id="nationality-text" data-trans="ui_search_country">Search for
+                                your country</span>
+                            <span class="material-symbols-outlined dropdown-icon">expand_more</span>
+                        </div>
+
+                        <!-- Desplegable -->
+                        <div class="custom-select-dropdown hidden" id="nationality-dropdown">
+                            <!-- Buscador fijo (Sticky) -->
+                            <div class="dropdown-search-sticky">
+                                <span class="material-symbols-outlined">search</span>
+                                <input type="text" id="nationality-search" placeholder="Search..." autocomplete="off">
+                            </div>
+                            <!-- Opciones (Rellenadas con JS) -->
+                            <div class="dropdown-options" id="nationality-options">
+                                <!-- Ej: <div class="dropdown-option" data-id="es"><img src="url" class="flag-icon"> España</div> -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="reg-dob" data-trans="ui_birthdate">[ui_birthdate]</label>
+                    <input type="text" id="reg-dob" placeholder="YYYY-MM-DD" readonly style="cursor: pointer;">
+                </div>
+
+                <div class="input-group">
+                    <label data-trans="ui_gender">[ui_gender]</label>
+                    <div class="gender-selector">
+                        <div class="gender-btn" data-gender="Masculino">
+                            <span class="material-symbols-outlined">male</span>
+                            <span data-trans="ui_male">[ui_male]</span>
+                        </div>
+                        <div class="gender-btn" data-gender="Femenino">
+                            <span class="material-symbols-outlined">female</span>
+                            <span data-trans="ui_female">[ui_female]</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="register-actions">
+                    <button id="btn-cancel-reg" class="btn-secondary" data-trans="ui_cancel">[ui_cancel]</button>
+                    <button id="btn-create-reg" class="btn-primary" data-trans="ui_create">[ui_create]</button>
+                </div>
             </div>
-          </div>
-          <div class="modal-actions">
-            <button class="btn-modal btn-modal-cancel" id="btn-sound-cancel">
-              <i class="fas fa-times"></i> CERRAR
-            </button>
-            <button class="btn-modal btn-modal-primary" id="btn-sound-save">
-              <i class="fas fa-check"></i> GUARDAR
-            </button>
-          </div>
         </div>
-      </div>
 
-      <!-- Reportar un Bug -->
-      <div id="modal-report-bug" class="modal-overlay" style="display: none">
-        <div class="modal-content">
-          <div class="modal-glow"></div>
-          <i class="fas fa-bug modal-icon"></i>
-          <h3>REPORTAR UN BUG</h3>
-          <p>Soporte técnico.</p>
-          <div class="modal-body"></div>
-          <div class="modal-actions">
-            <button class="btn-modal btn-modal-cancel">
-              <i class="fas fa-times"></i> CERRAR
-            </button>
-            <button class="btn-modal btn-modal-primary">
-              <i class="fas fa-paper-plane"></i> ENVIAR
-            </button>
-          </div>
+        <!-- MODAL CONFIRMACIÓN DE BORRADO -->
+        <div id="delete-modal" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-exclamation-triangle warning-icon"></i>
+                <h3 data-trans="ui_delete_title">[ui_delete_title]</h3>
+                <p data-trans="ui_delete_warning">[ui_delete_warning]</p>
+                <div class="modal-actions">
+                    <button id="btn-modal-cancel" class="btn-modal btn-modal-cancel"
+                        data-trans="ui_cancel">[ui_cancel]</button>
+                    <button id="btn-modal-confirm" class="btn-modal btn-modal-confirm"
+                        data-trans="ui_delete_confirm_btn">[ui_delete_confirm_btn]</button>
+                </div>
+            </div>
         </div>
-      </div>
 
-      <!-- Discord / Ayuda -->
-      <div id="modal-discord" class="modal-overlay" style="display: none">
-        <div class="modal-content">
-          <div class="modal-glow"></div>
-          <i class="fab fa-discord modal-icon"></i>
-          <h3>DISCORD / AYUDA</h3>
-          <p>Únete a la comunidad si necesitas ayuda externa.</p>
-          <div class="modal-body"></div>
-          <div class="modal-actions">
-            <button class="btn-modal btn-modal-cancel">
-              <i class="fas fa-times"></i> CERRAR
-            </button>
-            <button class="btn-modal btn-modal-primary">
-              <i class="fas fa-external-link-alt"></i> ABRIR ENLACE
-            </button>
-          </div>
+        <!-- Comprar Slots -->
+        <div id="modal-buy-slots" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-plus-square modal-icon"></i>
+                <h3>COMPRAR SLOTS</h3>
+                <p>Amplía tu límite de personajes.</p>
+                <div class="modal-body">
+                    <!-- Contenido inyectable -->
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> CONTINUAR</button>
+                </div>
+            </div>
         </div>
-      </div>
+
+        <!-- Restaurar Personaje -->
+        <!-- Restaurar Personaje (papelera de reciclaje temporal) -->
+        <!-- El listado se rellena dinámicamente vía JS con los personajes en PROCESO_ELIMINACION -->
+        <!-- que siguen dentro del plazo (Config.RestoreWindowDays). Cada fila tiene su propio botón -->
+        <!-- de restaurar, ya que puede haber varios personajes en papelera a la vez. -->
+        <div id="modal-restore-char" class="modal-overlay" style="display: none;">
+            <div class="modal-content modal-content-wide">
+                <div class="modal-glow"></div>
+                <i class="fas fa-clock-rotate-left modal-icon"></i>
+                <h3>RESTAURAR PERSONAJE</h3>
+                <p>Recupera un personaje borrado recientemente.</p>
+                <div class="modal-body">
+
+                    <!-- Estado de carga mientras se pide la lista al servidor -->
+                    <div id="restore-loading-state" class="restore-state-msg">
+                        <i class="fas fa-circle-notch fa-spin"></i>
+                        <span>Buscando personajes en la papelera...</span>
+                    </div>
+
+                    <!-- Estado vacío: no hay nada que restaurar -->
+                    <div id="restore-empty-state" class="restore-state-msg" style="display: none;">
+                        <i class="fas fa-search"></i>
+                        <span>No se han encontrado personajes eliminados recientemente.</span>
+                    </div>
+
+                    <!-- Lista de personajes en papelera (generada dinámicamente por JS) -->
+                    <div id="restore-list" class="restore-list" style="display: none;"></div>
+
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel" style="width: 100%;"><i class="fas fa-times"></i> CERRAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exportar / Importar Personaje (modal único con ambos bloques siempre visibles) -->
+        <!-- Se abre desde 2 botones distintos del sidebar (Exportar / Importar), pero muestra -->
+        <!-- siempre los dos bloques a la vez: Exportar arriba, Importar debajo. -->
+        <!-- data-focus indica qué bloque abrió el modal (afecta solo al botón inferior de acción). -->
+        <div id="modal-export-import" class="modal-overlay" style="display: none;" data-focus="export">
+            <div class="modal-content modal-content-wide">
+                <div class="modal-glow"></div>
+
+                <i class="fas fa-file-export modal-icon"></i>
+                <h3>EXPORTAR / IMPORTAR PERSONAJE</h3>
+                <p>Guarda o restaura un backup individual.</p>
+
+                <div class="modal-body">
+                    <div class="expimp-stack">
+
+                        <!-- ===================== BLOQUE EXPORTAR ===================== -->
+                        <div class="expimp-block" id="expimp-block-export">
+                            <div class="expimp-block-header">
+                                <i class="fas fa-file-export"></i>
+                                <span>Exportar</span>
+                            </div>
+                            <div class="expimp-panel">
+
+                                <!-- Selector de formato propio de este bloque -->
+                                <div class="expimp-col expimp-col-left">
+                                    <span class="expimp-col-label">Formato</span>
+                                    <div class="expimp-format-toggle" data-scope="export">
+                                        <button type="button" class="expimp-format-btn active" data-format="json">
+                                            <i class="fas fa-file-code"></i> JSON
+                                        </button>
+                                        <button type="button" class="expimp-format-btn" data-format="xml">
+                                            <i class="fas fa-file-code"></i> XML
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Código generado (solo lectura) -->
+                                <div class="expimp-col expimp-col-right">
+                                    <div class="expimp-output-header">
+                                        <span class="expimp-col-label">Código generado</span>
+                                        <button type="button" class="expimp-copy-btn" id="expimp-export-copy-btn" title="Copiar al portapapeles">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                    <pre class="expimp-output-code" id="expimp-export-code"><code id="expimp-export-code-content"></code></pre>
+                                </div>
+
+                            </div>
+                        </div>
+
+                        <div class="expimp-divider"></div>
+
+                        <!-- ===================== BLOQUE IMPORTAR ===================== -->
+                        <div class="expimp-block" id="expimp-block-import">
+                            <div class="expimp-block-header">
+                                <i class="fas fa-file-import"></i>
+                                <span>Importar</span>
+                            </div>
+                            <div class="expimp-panel">
+
+                                <!-- Selector de formato propio de este bloque -->
+                                <div class="expimp-col expimp-col-left">
+                                    <span class="expimp-col-label">Formato</span>
+                                    <div class="expimp-format-toggle" data-scope="import">
+                                        <button type="button" class="expimp-format-btn active" data-format="json">
+                                            <i class="fas fa-file-code"></i> JSON
+                                        </button>
+                                        <button type="button" class="expimp-format-btn" data-format="xml">
+                                            <i class="fas fa-file-code"></i> XML
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Textarea para pegar el código a importar -->
+                                <div class="expimp-col expimp-col-right">
+                                    <div class="expimp-output-header">
+                                        <span class="expimp-col-label">Pegar código</span>
+                                    </div>
+                                    <textarea class="expimp-output-textarea" id="expimp-import-textarea" placeholder="Pega aquí tu código JSON..."></textarea>
+                                </div>
+
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary" id="expimp-confirm-btn"><i class="fas fa-check"></i> EXPORTAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Spawn Preferido -->
+        <div id="modal-spawn-pref" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-map-location-dot modal-icon"></i>
+                <h3>SPAWN PREFERIDO</h3>
+                <p>Última ubicación vs. punto fijo.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-check"></i> GUARDAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ocultar Bloqueados -->
+        <div id="modal-hide-locked" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-eye-slash modal-icon"></i>
+                <h3>OCULTAR BLOQUEADOS</h3>
+                <p>Slots vacíos fuera del selector.</p>
+                <div class="modal-body hl-modal-body">
+                    <!-- Zona de ejemplo interactiva (simula la vista principal) -->
+                    <div class="hl-preview">
+                        <div class="hl-preview-label">
+                            <i class="fas fa-arrows-left-right-to-line"></i>
+                            <span data-trans="ui_hide_locked_preview">Vista previa del selector</span>
+                        </div>
+
+                        <!-- Slots de ejemplo: 2 ocupados + 1 vacío (los vacíos se marcan con la clase hl-locked) -->
+                        <div class="hl-slot-row">
+                            <div class="hl-slot hl-slot-occupied">
+                                <i class="fas fa-user-check hl-slot-user"></i>
+                                <span class="hl-slot-name">John</span>
+                            </div>
+                            <div class="hl-slot hl-slot-occupied">
+                                <i class="fas fa-user-check hl-slot-user"></i>
+                                <span class="hl-slot-name">Melissa</span>
+                            </div>
+                            <div class="hl-slot hl-slot-locked">
+                                <span class="material-symbols-outlined hl-slot-plus">add</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Switch cuadriculado -->
+                    <div class="hl-switch-wrap">
+                        <div class="hl-switch-meta">
+                            <span class="hl-switch-label" data-trans="ui_hide_locked_switch">Ocultar slots vacíos</span>
+                            <span class="hl-switch-value" id="hl-switch-value" data-trans="ui_visible">[ui_visible]</span>
+                        </div>
+                        <div class="hl-grid-switch" id="hl-grid-switch" data-active="false">
+                            <div class="hl-grid-option" data-value="false">
+                                <i class="fas fa-eye"></i>
+                                <span data-trans="ui_visible">[ui_visible]</span>
+                            </div>
+                            <div class="hl-grid-option" data-value="true">
+                                <i class="fas fa-eye-slash"></i>
+                                <span data-trans="ui_hidden">[ui_hidden]</span>
+                            </div>
+                            <div class="hl-grid-thumb" id="hl-grid-thumb"></div>
+                        </div>
+                    </div>
+
+                    <p class="hl-hint">
+                        <i class="fas fa-circle-info"></i>
+                        <span data-trans="ui_hide_locked_hint">Los slots vacíos se ocultarán del selector y solo verás tus personajes creados.</span>
+                    </p>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary" id="hl-save-btn"><i class="fas fa-check"></i> ACTUALIZAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sonidos de Interfaz -->
+        <div id="modal-sound-toggle" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-volume-high modal-icon"></i>
+                <h3>SONIDOS DE INTERFAZ</h3>
+                <p>Activar/desactivar clicks y hovers.</p>
+                <div class="modal-body snd-modal-body">
+                    <!-- Preview de volumen con barras animadas -->
+                    <div class="snd-preview">
+                        <div class="snd-preview-bars" id="snd-preview-bars">
+                            <span class="snd-bar" style="--bar-h: 30%"></span>
+                            <span class="snd-bar" style="--bar-h: 55%"></span>
+                            <span class="snd-bar" style="--bar-h: 40%"></span>
+                            <span class="snd-bar" style="--bar-h: 70%"></span>
+                            <span class="snd-bar" style="--bar-h: 50%"></span>
+                            <span class="snd-bar" style="--bar-h: 90%"></span>
+                            <span class="snd-bar" style="--bar-h: 60%"></span>
+                            <span class="snd-bar" style="--bar-h: 80%"></span>
+                            <span class="snd-bar" style="--bar-h: 45%"></span>
+                            <span class="snd-bar" style="--bar-h: 65%"></span>
+                            <span class="snd-bar" style="--bar-h: 85%"></span>
+                            <span class="snd-bar" style="--bar-h: 55%"></span>
+                        </div>
+                    </div>
+
+                    <!-- Slider custom cuadriculado -->
+                    <div class="snd-wrap">
+                        <div class="snd-meta">
+                            <span class="snd-label" data-trans="ui_sound_volume">Volumen de interfaz</span>
+                            <span class="snd-value" id="snd-volume-value">100%</span>
+                        </div>
+
+                        <div class="snd-slider" id="snd-slider">
+                            <!-- Celdas (notch) que se rellenan según el valor -->
+                            <div class="snd-notches" id="snd-notches"></div>
+                            <!-- Barra de progreso rellena -->
+                            <div class="snd-fill" id="snd-fill"></div>
+                            <!-- Mango deslizante (thumb) -->
+                            <div class="snd-thumb" id="snd-thumb"></div>
+                            <!-- Zona invisible táctil/clicable -->
+                            <div class="snd-hitbox" id="snd-hitbox"></div>
+                        </div>
+
+                        <div class="snd-scale">
+                            <span class="snd-scale-min"><i class="fas fa-volume-off"></i></span>
+                            <span class="snd-scale-max"><i class="fas fa-volume-high"></i></span>
+                        </div>
+                    </div>
+
+                    <button type="button" class="snd-test-btn" id="snd-test-btn">
+                        <i class="fas fa-play"></i>
+                        <span data-trans="ui_sound_test">Probar sonido</span>
+                    </button>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel" id="btn-sound-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary" id="btn-sound-save"><i class="fas fa-check"></i> GUARDAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reportar un Bug -->
+        <div id="modal-report-bug" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fas fa-bug modal-icon"></i>
+                <h3>REPORTAR UN BUG</h3>
+                <p>Soporte técnico.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-paper-plane"></i> ENVIAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Discord / Ayuda -->
+        <div id="modal-discord" class="modal-overlay" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-glow"></div>
+                <i class="fab fa-discord modal-icon"></i>
+                <h3>DISCORD / AYUDA</h3>
+                <p>Únete a la comunidad si necesitas ayuda externa.</p>
+                <div class="modal-body"></div>
+                <div class="modal-actions">
+                    <button class="btn-modal btn-modal-cancel"><i class="fas fa-times"></i> CERRAR</button>
+                    <button class="btn-modal btn-modal-primary"><i class="fas fa-external-link-alt"></i> ABRIR
+                        ENLACE</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="js/app.js"></script>
     <script src="js/sounds.js"></script>
     <script src="js/validators.js"></script>
-  </body>
+</body>
+
 </html>

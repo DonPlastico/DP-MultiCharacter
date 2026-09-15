@@ -47,23 +47,29 @@ end)
 -- 🔌 NUI CALLBACKS (Comunicación JS -> LUA)
 -- ==========================================
 -- Solicitar lista de personajes disponibles y los slots máximos al servidor
-RegisterNUICallback('setupCharacters', function(data, cb)
-    DebugPrint("NUI Callback: 'setupCharacters' - Solicitando lista de personajes al servidor.")
+local function RequestCharactersAndSpawn()
+    DebugPrint("Solicitando lista de personajes al servidor (RequestCharactersAndSpawn).")
     QBCore.Functions.TriggerCallback('DP-MultiCharacter:server:setupCharacters',
-        function(result, maxSlots, lastCharacter)
+        function(result, maxSlots, lastCharacter, trashedCount)
             DebugPrint("Lista de personajes recibida. Enviando datos a la interfaz (Slots disponibles: " ..
-                           tostring(maxSlots) .. ").")
+                           tostring(maxSlots) .. ", en papelera: " .. tostring(trashedCount) .. ").")
             SendNUIMessage({
                 action = "setupCharacters",
                 characters = result,
                 slots = maxSlots,
-                lastCharacter = lastCharacter
+                lastCharacter = lastCharacter,
+                trashedSlots = trashedCount or 0
             })
             -- Al recibir la data, spawneamos todos los personajes a la vez
             DebugPrint("Spawneando los peds de los personajes en sus respectivos slots.")
             SpawnAllPeds(result, maxSlots)
-            cb("ok")
         end)
+end
+
+RegisterNUICallback('setupCharacters', function(data, cb)
+    DebugPrint("NUI Callback: 'setupCharacters' - Solicitud inicial de personajes.")
+    RequestCharactersAndSpawn()
+    cb("ok")
 end)
 
 -- Previsualizar Ped (Solo para actualizar la sombra al cambiar de género durante la creación)
@@ -120,10 +126,100 @@ RegisterNUICallback('deleteCharacter', function(data, cb)
     end, data.citizenid)
 end)
 
--- Reproducir sonidos de interfaz (clicks, hover, errores, etc.) para darle estilo al menú
-RegisterNUICallback('playSound', function(data, cb)
-    PlaySoundFrontend(-1, data.sound, "HUD_FRONTEND_DEFAULT_SOUNDSET", 1)
-    cb('ok')
+-- Pedir al servidor la lista de personajes en la papelera (Restaurar Personaje)
+RegisterNUICallback('getDeletedCharacters', function(data, cb)
+    DebugPrint("NUI Callback: 'getDeletedCharacters' - Solicitando personajes en papelera al servidor.")
+    QBCore.Functions.TriggerCallback('DP-MultiCharacter:server:getDeletedCharacters', function(deletedChars)
+        SendNUIMessage({
+            action = "deletedCharactersList",
+            characters = deletedChars
+        })
+        cb("ok")
+    end)
+end)
+
+-- Restaurar un personaje desde la papelera
+RegisterNUICallback('restoreCharacter', function(data, cb)
+    DebugPrint("NUI Callback: 'restoreCharacter' - Solicitud para restaurar personaje con CitizenID: " ..
+                   tostring(data.citizenid))
+    if data and data.citizenid then
+        TriggerServerEvent('DP-MultiCharacter:server:restoreCharacter', data.citizenid)
+    end
+    cb("ok")
+end)
+
+-- ==========================================
+-- 👁️ OCULTAR BLOQUEADOS (PREFERENCIA PERSISTENTE)
+-- ==========================================
+-- Clave KVP donde guardamos la preferencia por jugador (persiste entre sesiones)
+local HIDE_LOCKED_KVP = 'DP_MC_hideLocked'
+
+-- Preferencia en memoria del cliente. Se sincroniza con el KVP al guardar y se
+-- lee al cargar el recurso. Usamos la variable como fuente de verdad en runtime
+-- porque SetResourceKvpInt/GetResourceKvpInt dentro del MISMO frame pueden no
+-- propagarse al instante (el KVP se escribe al final del frame).
+local hideLockedPref = false
+
+-- Cargamos la preferencia del KVP al arrancar el recurso
+CreateThread(function()
+    Wait(0)
+    hideLockedPref = GetResourceKvpInt(HIDE_LOCKED_KVP, 0) == 1
+    if hideLockedPref then
+        DebugPrint("Preferencia 'Ocultar Bloqueados' cargada del KVP: true")
+    end
+end)
+
+-- Lee la preferencia guardada. Si nunca se ha tocado, devuelve false (Visible).
+-- IMPORTANTE: usamos SetResourceKvpInt / GetResourceKvpInt porque son los natives
+-- KVP estables de FiveM. SET_RESOURCE_KVP_STRING NO existe (da "attempt to call a
+-- nil value") y rompe el callback impidiendo refrescar los peds.
+function GetHideLockedPreference()
+    return hideLockedPref
+end
+
+-- Guarda la preferencia en la variable local + KVP del jugador
+function SetHideLockedPreference(value)
+    hideLockedPref = value and true or false
+    SetResourceKvpInt(HIDE_LOCKED_KVP, hideLockedPref and 1 or 0)
+end
+
+-- NUI Callback: la UI pide guardar la preferencia "Ocultar Bloqueados".
+-- También recalculamos los peds de los slots vacíos para que la vista 3D
+-- quede coherente con la nueva preferencia (las sombras de "crear personaje"
+-- desaparecen / reaparecen según el estado elegido).
+RegisterNUICallback('setHideLocked', function(data, cb)
+    local hideLocked = data.hideLocked == true or data.hideLocked == 'true'
+    DebugPrint("NUI Callback: 'setHideLocked' - Guardando preferencia ocultar bloqueados: " .. tostring(hideLocked))
+    SetHideLockedPreference(hideLocked)
+
+    -- Re-sincronizar los peds (re-pide la lista al servidor y SpawnAllPeds
+    -- leerá la nueva preferencia del KVP para omitir los slots vacíos).
+    RequestCharactersAndSpawn()
+    cb("ok")
+end)
+
+-- ==========================================
+-- 🔊 VOLUMEN DE INTERFAZ (PERSISTENCIA EN BD)
+-- ==========================================
+-- Nota: los sonidos de interfaz ahora se generan en la UI con WebAudio
+-- (ui/js/sounds.js) y el volumen se aplica en proporción real al % elegido.
+-- Desde Lua solo gestionamos la PERSISTENCIA en base de datos por jugador.
+
+-- NUI Callback: la UI pide el volumen guardado del jugador (tabla dp_multicharacter_settings)
+RegisterNUICallback('getInterfaceVolume', function(data, cb)
+    DebugPrint("NUI Callback: 'getInterfaceVolume' - Solicitando volumen persistido al servidor.")
+    QBCore.Functions.TriggerCallback('DP-MultiCharacter:server:getInterfaceVolume', function(volume)
+        DebugPrint("Volumen persistido recibido del servidor: " .. tostring(volume) .. "%")
+        cb(volume)
+    end)
+end)
+
+-- NUI Callback: la UI guarda el volumen del jugador en BD (por licencia)
+RegisterNUICallback('setInterfaceVolume', function(data, cb)
+    local volume = tonumber(data.volume) or 100
+    DebugPrint("NUI Callback: 'setInterfaceVolume' - Guardando volumen: " .. tostring(volume) .. "%")
+    TriggerServerEvent('DP-MultiCharacter:server:setInterfaceVolume', volume)
+    cb("ok")
 end)
 
 -- Muestra un aviso de próximamente si hacen click en la tuerca/ajustes

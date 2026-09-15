@@ -54,7 +54,18 @@ Locales['en'] = {
     ['char_deleted'] = 'Character deleted from the database.',
     ['invalid_name'] = 'The first or last name contains invalid characters.',
     ['profanity_detected'] = 'A banned word has been detected in your name.',
-    ['loading_data'] = 'Loading player information...'
+    ['loading_data'] = 'Loading player information...',
+    ['ui_visible'] = 'VISIBLE',
+    ['ui_hidden'] = 'HIDDEN',
+    ['ui_hide_locked_preview'] = 'Character selector preview',
+    ['ui_hide_locked_switch'] = 'Hide empty slots',
+    ['ui_hide_locked_hint'] = 'Empty slots will be hidden from the selector and you will only see your created characters.',
+    ['ui_hide_locked_on'] = 'Only created characters',
+    ['ui_hide_locked_off'] = 'Empty slots outside the selector',
+    ['ui_sound_volume'] = 'Interface volume',
+    ['ui_sound_test'] = 'Test sound',
+    ['ui_sound_off'] = 'Sounds disabled',
+    ['ui_sound_level'] = 'Volume at %s%'
 }
 
 DebugPrint("English dictionary ('en') registered successfully.")
