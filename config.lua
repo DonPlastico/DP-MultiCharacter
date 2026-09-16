@@ -14,9 +14,15 @@ Configura tu lenguaje usando el código de idioma correspondiente. Por ejemplo:
 
 Config.Locale = 'es'
 
-Config.ServerName = 'Servidor de Prueba' -- Nombre del servidor que se mostrará en la pantalla cinematica al seleccionar un personaje para jugar
-
 Config.EnableDeleteButton = true -- ¿Permitir a los jugadores borrar a sus personajes?
+
+Config.RateLimits = {
+    create = 10,  -- Segundos de espera entre creación de personajes
+    delete = 10,  -- Segundos de espera entre borrados
+    reorder = 5,  -- Segundos de espera para guardar un nuevo orden
+    export = 15,  -- Segundos de espera entre exportaciones
+    import = 15   -- Segundos de espera entre intentos de importación
+}
 
 Config.DefaultSlots = 2 -- Personajes gratuitos para todos los usuarios (mínimo: 1, máximo: 7)
 
@@ -30,6 +36,13 @@ Config.MaxAge = 100 -- Edad máxima que se puede seleccionar para un personaje (
 Config.CustomSlots = {
     ['license:1fe52f26d4383515892ef12069befe56f33c421b'] = 7
 }
+
+-- Decide qué enlaces de ayuda se ofrecen en la pantalla de Opciones.
+-- Si ambos están en false, el modal mostrará un aviso de "sin enlaces".
+Config.EnableWebHelp = true -- ¿Mostrar enlace de ayuda a una Web externa?
+Config.WebHelpURL = 'https://tuservidor.com/ayuda' -- URL de la Web de ayuda (si EnableWebHelp = true)
+Config.EnableDiscordHelp = true -- ¿Mostrar enlace de ayuda por Discord?
+Config.DiscordHelpURL = 'https://discord.gg/tuservidor' -- URL de invitación de Discord (si EnableDiscordHelp = true)
 
 Config.CommandLogOut = 'logout' -- Comando para cerrar sesión y volver a la selección de personajes
 
@@ -92,21 +105,18 @@ Config.SpawnPoints = {
     }
 }
 
-Config.StartItemsList =
-    { -- Items que se le darán al jugador al crear un personaje nuevo. Se pueden agregar más items, pero asegúrate de que existan entre tus items.
-    {
-        name = "water",
-        amount = 5
-    }, {
-        name = "bread",
-        amount = 5
-    }, {
-        name = "phone",
-        amount = 1
-    }}
+-- Ítems extras que el jugador puede comprar al crear un personaje.
+-- El precio ('price') se incrementará un +25% visualmente en el NUI.
+Config.StartItemsList = {
+    { name = "id_card", label = "Tarjeta de Identidad", price = 0, min = 0, max = 1 },
+    { name = "phone", label = "Teléfono Móvil", price = 500, min = 0, max = 1000 },
+    { name = "tosti", label = "Sándwich Tostado", price = 2, min = 0, max = 1000 },
+    { name = "water_bottle", label = "Botella de Agua", price = 2, min = 0, max = 1000 },
+    { name = "kurkakola", label = "Lata de Refresco", price = 2, min = 0, max = 1000 },
+    { name = "sandwich", label = "Sándwich Clásico", price = 2, min = 0, max = 1000 },
+}
 
 Config.ExportCharacters = true -- Si es true, aparecerá un botón que permitira exportar los personajes que desee el jugador, con un formato xmt (ASIGNANDO UNA ID UNICA POR PERSONAJE). Si es false, no aparecera dicho botón por lo que no permitira exportar ningun personaje
-
 Config.ImportCharacters = true -- Si es true, aparecerá un botón que permitira importar personajes que desee el jugador, pegando un texto xmt que se genera con un export (Si el ID unico no coincide o no lo tiene, no se podrá importar, para evitar gente lista que copia cosas de otros)... Si es false, no aparecera dicho botón por lo que no permitira importar ningun personaje
 
 Config.DefaultMaleModel = 'mp_m_freemode_01' -- Modelo por defecto para personajes masculinos. Puedes cambiarlo a cualquier modelo válido de GTA V, pero asegúrate de que sea un modelo jugable y no un NPC.
@@ -699,4 +709,5 @@ Config.Nationalities =
     }, {
         label = "Zimbabue",
         id = "zw"
-    }}
+    }
+}

@@ -28,14 +28,14 @@ end
 -- 🧍‍♂️ FUNCIÓN PARA DESNUDAR PEDS
 -- ==========================================
 local function SetPedNaked(ped, model)
-    if model == joaat('mp_m_freemode_01') then
+    if model == joaat(Config.DefaultMaleModel) then
         -- Hombre desnudo (Boxers)
         SetPedComponentVariation(ped, 3, 15, 0, 0) -- Brazos (Desnudos)
         SetPedComponentVariation(ped, 4, 14, 0, 0) -- Pantalones (Boxers)
         SetPedComponentVariation(ped, 6, 34, 0, 0) -- Pies (Descalzo)
         SetPedComponentVariation(ped, 8, 15, 0, 0) -- Accesorio (Nada)
         SetPedComponentVariation(ped, 11, 15, 0, 0) -- Torso (Pecho descubierto)
-    elseif model == joaat('mp_f_freemode_01') then
+    elseif model == joaat(Config.DefaultFemaleModel) then
         -- Mujer desnuda (Ropa interior)
         SetPedComponentVariation(ped, 3, 15, 0, 0) -- Brazos (Desnudos)
         SetPedComponentVariation(ped, 4, 15, 0, 0) -- Pantalones (Bragas)
@@ -53,16 +53,33 @@ function ToggleUI(state)
     DebugPrint("ToggleUI ejecutado. Estado: " .. tostring(state))
     SetNuiFocus(state, state)
 
+    -- Leemos el banco inicial que QBCore tiene configurado por defecto (si no lo encuentra, asume 10000)
+    local startingBank = 10000
+    if QBCore.Config and QBCore.Config.Money and QBCore.Config.Money.MoneyTypes then
+        startingBank = QBCore.Config.Money.MoneyTypes.bank or 10000
+    end
+
     SendNUIMessage({
         action = "toggleUI",
         state = state,
         debug = Config.Debug,
         translations = GetTranslations(),
         nationalities = Config.Nationalities,
-        minAge = Config.MinAge or 18, -- 18 por seguridad si falta
-        maxAge = Config.MaxAge or 100, -- 100 por seguridad si falta
+        minAge = Config.MinAge or 18,
+        maxAge = Config.MaxAge or 100,
         randomGenders = randomSlotGenders,
-        hideLocked = GetHideLockedPreference() -- Preferencia persistente "Ocultar Bloqueados"
+        hideLocked = GetHideLockedPreference(),
+        exportCharacters = Config.ExportCharacters ~= nil and Config.ExportCharacters or false,
+        importCharacters = Config.ImportCharacters ~= nil and Config.ImportCharacters or false,
+        helpConfig = {
+            enableWeb = Config.EnableWebHelp ~= nil and Config.EnableWebHelp or false,
+            webURL = Config.WebHelpURL or '',
+            enableDiscord = Config.EnableDiscordHelp ~= nil and Config.EnableDiscordHelp or false,
+            discordURL = Config.DiscordHelpURL or ''
+        },
+        -- 🛒 NUEVOS DATOS PARA EL CARRITO DE COMPRAS (Starter Items)
+        startingItems = Config.StartItemsList or {},
+        startingBudget = startingBank -- Dinero leído directamente de QBCore
     })
 
     -- Al ABRIR la UI, solicitamos el volumen de interfaz persistido en BD y se lo
@@ -115,8 +132,10 @@ function SetupCamera(state)
 
         -- Hilo para bloquear spawns de NPCs mientras esté en el menú
         CreateThread(function()
-            DebugPrint("Iniciando hilo para bloquear spawns de NPCs.")
-            while cam do
+            DebugPrint("Iniciando hilo para bloquear spawns de NPCs (ThisFrame).")
+            -- Usamos Wait(0) por obligación del motor de GTA V, pero reforzamos la 
+            -- condición para que muera instantáneamente al entrar al mundo.
+            while cam and DoesCamExist(cam) and IsCamActive(cam) do
                 SetVehicleDensityMultiplierThisFrame(0.0)
                 SetPedDensityMultiplierThisFrame(0.0)
                 SetRandomVehicleDensityMultiplierThisFrame(0.0)
@@ -124,6 +143,7 @@ function SetupCamera(state)
                 SetScenarioPedDensityMultiplierThisFrame(0.0, 0.0)
                 Wait(0)
             end
+            DebugPrint("Hilo de bloqueo de NPCs finalizado correctamente.")
         end)
     else
         DebugPrint("Destruyendo la cámara del menú y restaurando el HUD.")
@@ -149,10 +169,13 @@ function UpdatePedGender(slot, gender)
         return
     end
 
-    local model = joaat('mp_m_freemode_01')
+    local model = joaat(Config.DefaultMaleModel)
     if gender == "Femenino" or gender == 1 or gender == "1" then
-        model = joaat('mp_f_freemode_01')
+        model = joaat(Config.DefaultFemaleModel)
     end
+
+    -- Guardamos la secuencia de spawn actual
+    local thisSequence = currentSpawnSequence
 
     DebugPrint("Solicitando modelo para actualizar género: " .. tostring(model))
     RequestModel(model)
@@ -160,6 +183,11 @@ function UpdatePedGender(slot, gender)
     while not HasModelLoaded(model) and timeout < 500 do
         Wait(10)
         timeout = timeout + 1
+    end
+
+    -- 🛡️ ANTI-DUPLICADOS: Si la secuencia cambió mientras esperábamos al modelo, abortamos
+    if thisSequence ~= currentSpawnSequence then
+        return
     end
 
     local coords = activePedCoords[slot] or Config.PedCoords[slot] or Config.PedCoords[1]
@@ -178,9 +206,30 @@ function UpdatePedGender(slot, gender)
     SetEntityInvincible(ped, true)
     SetBlockingOfNonTemporaryEvents(ped, true)
     SetEntityAlpha(ped, 150, false)
-    SetPedNaked(ped, model) -- Le ponemos la ropa interior en lugar de la ropa por defecto
+    SetPedNaked(ped, model)
 
     charPeds[slot].entity = ped
+end
+
+-- ==========================================
+-- 🧍‍♂️ GESTIÓN DE PEDS (CREACIÓN Y BORRADO)
+-- ==========================================
+local currentSpawnSequence = 0 -- Variable para controlar las condiciones de carrera asíncronas
+
+-- Failsafe: Limpia cualquier ped "zombie" que haya quedado de un reinicio de script
+local function ClearZombiePeds()
+    DebugPrint("Ejecutando limpieza de peds zombies en la sala de selección.")
+    local peds = GetGamePool('CPed')
+    for i = 1, #peds do
+        local ped = peds[i]
+        -- Si existe, NO es un jugador real, y está a menos de 20 metros de la sala
+        if ped and DoesEntityExist(ped) and not IsPedAPlayer(ped) then
+            local coords = GetEntityCoords(ped)
+            if #(coords - vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z)) < 20.0 then
+                DeleteEntity(ped)
+            end
+        end
+    end
 end
 
 -- ==========================================
@@ -274,43 +323,46 @@ end
 -- 🧍‍♂️ GESTIÓN DE PEDS (CREACIÓN Y BORRADO)
 -- ==========================================
 -- Función para generar todos los peds al abrir el menú (tanto reales como sombras)
--- Si la preferencia "Ocultar Bloqueados" está activa (KVP persistente), los slots
--- vacíos NO generan sombra. Además, los peds visibles se REPOSICIONAN centrados
--- como si solo existiera ese número de slots (índice visual 1..N) en lugar de
--- dejar huecos del grid original (1..maxSlots).
 function SpawnAllPeds(characters, maxSlots)
+    currentSpawnSequence = currentSpawnSequence + 1
+    local thisSequence = currentSpawnSequence
+
     DebugPrint("Iniciando SpawnAllPeds para " .. tostring(maxSlots) .. " slots máximos.")
     DeleteAllPeds() -- Limpiamos por seguridad
+
+    -- Si es la primera vez que se carga la UI, forzamos limpieza de zombies
+    if thisSequence == 1 then
+        ClearZombiePeds()
+    end
+
     activePedCoords = {}
 
-    -- Preferencia persistente del jugador (definida en cl_events.lua)
     local hideLocked = GetHideLockedPreference()
-
-    -- 1) Construir la lista de "peds visibles" (slots reales que se pintan):
-    --    - Ocupados: siempre visibles
-    --    - Vacíos: visibles solo si NO está "Ocultar Bloqueados"
-    --    - Excepción: si no hay ningún personaje y la preferencia está activa,
-    --      se muestra el slot 1 como sombra para poder crear el primero.
     local visibleSlots = {}
     local hasCharacters = #characters > 0
 
     for slot = 1, maxSlots do
         local char = GetCharacterBySlot(characters, slot)
         if char then
-            visibleSlots[#visibleSlots + 1] = { slot = slot, char = char }
+            visibleSlots[#visibleSlots + 1] = {
+                slot = slot,
+                char = char
+            }
         elseif not hideLocked then
-            visibleSlots[#visibleSlots + 1] = { slot = slot, char = nil }
+            visibleSlots[#visibleSlots + 1] = {
+                slot = slot,
+                char = nil
+            }
         elseif not hasCharacters and slot == 1 then
-            visibleSlots[#visibleSlots + 1] = { slot = slot, char = nil }
+            visibleSlots[#visibleSlots + 1] = {
+                slot = slot,
+                char = nil
+            }
         end
     end
 
     local totalVisible = #visibleSlots
-    DebugPrint("Peds visibles tras filtro: " .. tostring(totalVisible) .. " (ocultar bloqueados: " ..
-                   tostring(hideLocked) .. ")")
 
-    -- 2) Colocar cada ped visible con coordenadas CENTRADAS según su índice
-    --    visual (1..totalVisible), como si el grid solo tuviera esos slots.
     for visualIndex, entry in ipairs(visibleSlots) do
         local slot = entry.slot
         local char = entry.char
@@ -318,16 +370,10 @@ function SpawnAllPeds(characters, maxSlots)
         activePedCoords[slot] = coords
 
         if char then
-            -- Slot ocupado: Cargar el personaje real
-            DebugPrint("Slot " .. tostring(slot) .. " ocupado (posición visual " .. visualIndex .. "/" ..
-                           totalVisible .. "). Spawneando ped real.")
-            SpawnSinglePed(slot, char.charinfo.gender, char.model, char.skin, coords, false)
+            SpawnSinglePed(slot, char.charinfo.gender, char.model, char.skin, coords, false, thisSequence)
         else
-            -- Slot vacío visible: Cargar la "Sombra"
-            DebugPrint("Slot " .. tostring(slot) .. " vacío (posición visual " .. visualIndex .. "/" ..
-                           totalVisible .. "). Spawneando ped sombra.")
             local randomGender = randomSlotGenders[tostring(slot)] or 0
-            SpawnSinglePed(slot, randomGender, nil, nil, coords, true)
+            SpawnSinglePed(slot, randomGender, nil, nil, coords, true, thisSequence)
         end
     end
 end
@@ -344,19 +390,20 @@ function DeleteAllPeds()
     charPeds = {}
 end
 
--- Función para instanciar un Ped individualmente (Aplica ropa, invencibilidad y sombras)
-function SpawnSinglePed(slot, gender, customModel, skinData, coords, isShadow)
-    local model = joaat('mp_m_freemode_01')
+-- Función para instanciar un Ped individualmente
+function SpawnSinglePed(slot, gender, customModel, skinData, coords, isShadow, sequenceId)
+    local model = joaat(Config.DefaultMaleModel)
     if gender == "Femenino" or gender == 1 or gender == "1" then
-        model = joaat('mp_f_freemode_01')
+        model = joaat(Config.DefaultFemaleModel)
     end
+
     if customModel then
         local parsedModel = tonumber(customModel)
         model = parsedModel and parsedModel or joaat(customModel)
     end
+
     if not IsModelInCdimage(model) or not IsModelValid(model) then
-        DebugPrint("Modelo inválido detectado para el slot " .. tostring(slot) .. ". Forzando default.")
-        model = joaat('mp_m_freemode_01')
+        model = joaat(Config.DefaultMaleModel)
     end
 
     RequestModel(model)
@@ -364,6 +411,17 @@ function SpawnSinglePed(slot, gender, customModel, skinData, coords, isShadow)
     while not HasModelLoaded(model) and timeout < 500 do
         Wait(10)
         timeout = timeout + 1
+    end
+
+    -- 🛡️ ANTI-DUPLICADOS: Si la secuencia cambió mientras esperábamos, cancelamos
+    if sequenceId and sequenceId ~= currentSpawnSequence then
+        DebugPrint("Spawn cancelado para el slot " .. tostring(slot) .. " por cambio asíncrono.")
+        return
+    end
+
+    -- 🛡️ ANTI-DUPLICADOS EXTRA: Si ya se registró un ped en este slot, lo borramos preventivamente
+    if charPeds[slot] and charPeds[slot].entity and DoesEntityExist(charPeds[slot].entity) then
+        DeleteEntity(charPeds[slot].entity)
     end
 
     local ped = CreatePed(2, model, coords.x, coords.y, coords.z - 0.98, coords.w, false, true)
@@ -374,15 +432,14 @@ function SpawnSinglePed(slot, gender, customModel, skinData, coords, isShadow)
 
     if isShadow then
         SetEntityAlpha(ped, 150, false)
-        SetPedNaked(ped, model) -- Ropa interior para las sombras
+        SetPedNaked(ped, model)
     elseif skinData then
         local decodedSkin = type(skinData) == "string" and json.decode(skinData) or skinData
         TriggerEvent('qb-clothing:client:loadPlayerClothing', decodedSkin, ped)
     else
-        SetPedNaked(ped, model) -- Ropa interior por seguridad si un ped real no tiene ropa guardada
+        SetPedNaked(ped, model)
     end
 
-    -- Ahora guardamos un objeto (tabla) para saber si era una sombra y recuperar su estado luego
     charPeds[slot] = {
         entity = ped,
         isShadow = isShadow
@@ -400,9 +457,9 @@ function SpawnPreviewPed(gender, customModel, skinData)
     end
 
     -- 1. Determinar el modelo base según el género
-    local model = joaat('mp_m_freemode_01')
+    local model = joaat(Config.DefaultMaleModel)
     if gender == "Femenino" or gender == 1 or gender == "1" then
-        model = joaat('mp_f_freemode_01')
+        model = joaat(Config.DefaultFemaleModel)
     end
 
     -- 2. Procesar el modelo guardado en la base de datos
@@ -419,9 +476,9 @@ function SpawnPreviewPed(gender, customModel, skinData)
 
     -- 3. Failsafe: Si el modelo es inválido, forzamos el default para que no se congele
     if not IsModelInCdimage(model) or not IsModelValid(model) then
-        model = joaat('mp_m_freemode_01')
+        model = joaat(Config.DefaultMaleModel)
         if gender == "Femenino" or gender == 1 or gender == "1" then
-            model = joaat('mp_f_freemode_01')
+            model = joaat(Config.DefaultFemaleModel)
         end
     end
 
@@ -535,7 +592,7 @@ RegisterNetEvent('DP-MultiCharacter:client:loadSkinAndSpawn', function(model, sk
     local playerPed = PlayerPedId()
 
     -- Asegurar que el modelo del jugador sea el correcto (FreeMode u otro personalizado)
-    local skinModel = tonumber(model) or joaat(model or 'mp_m_freemode_01')
+    local skinModel = tonumber(model) or joaat(model or Config.DefaultMaleModel)
 
     RequestModel(skinModel)
     while not HasModelLoaded(skinModel) do

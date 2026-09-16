@@ -93,10 +93,16 @@ end)
 -- Enviar los datos del formulario de la interfaz al servidor para crear el personaje
 RegisterNUICallback('createCharacter', function(data, cb)
     DebugPrint("NUI Callback: 'createCharacter' - Iniciando creación de un nuevo personaje.")
+
+    if data.cart then
+        DebugPrint("Se detectó un carrito de compra en el payload. Total a gastar: $" .. tostring(data.cartTotal))
+    end
+
     ToggleUI(false)
     DebugPrint("Interfaz ocultada, eliminando todos los peds en pantalla para entrar al juego.")
     DeleteAllPeds()
     DebugPrint("Enviando petición al servidor para registrar personaje nuevo.")
+
     TriggerServerEvent('DP-MultiCharacter:server:createCharacter', data)
     cb("ok")
 end)

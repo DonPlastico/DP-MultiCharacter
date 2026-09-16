@@ -41,7 +41,11 @@ files {
     'ui/js/validators.js',
     'ui/img/bg1.jpg',
     'ui/img/bg2.png',
-    'ui/img/bg3.jpg'
+    'ui/img/bg3.jpg',
+    'ui/items/*.png',
+    'ui/items/*.jpg',
+    'ui/items/*.svg',
+    'ui/items/*.webp',
 }
 
 dependencies {

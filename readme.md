@@ -11,7 +11,7 @@ DP-MultiCharacter/
 ├── client/
 │   ├── cl_main.lua      # Cámara, gestión de peds (personajes 3D), zoom/foco, spawn final
 │   ├── cl_events.lua    # Entrada al servidor + NUI Callbacks (JS -> Lua)
-│   └── cl_utils.lua     # Utilidades editables (notificaciones, integración con qb-clothes)
+│   └── cl_utils.lua     # Utilidades editables (notificaciones, integración con qb-clothing)
 ├── server/
 │   ├── sv_main.lua      # Login/registro de personajes en QBCore, spawn, buckets
 │   ├── sv_database.lua  # Consultas SQL: listar, borrar y reordenar personajes
@@ -31,7 +31,7 @@ DP-MultiCharacter/
 └── fxmanifest.lua        # Manifiesto de FiveM (scripts, ui_page, dependencias)
 ```
 
-**Dependencia obligatoria:** `qb-core`. También usa `oxmysql` para las queries SQL, y de forma opcional se integra con `qb-clothing`/`qb-clothes`, `DP-Inventory` y `DP-RealMoney` si están presentes.
+**Dependencia obligatoria:** `qb-core`. También usa `oxmysql` para las queries SQL, y de forma opcional se integra con `qb-clothing`, `DP-Inventory` y `DP-RealMoney` si están presentes.
 
 ---
 
@@ -87,10 +87,39 @@ DP-MultiCharacter/
 |---|---|---|
 | `qb-core` | Framework base (login, personajes, dinero, notificaciones) | ✅ Sí |
 | `oxmysql` | Todas las queries SQL | ✅ Sí |
-| `qb-clothing` / `qb-clothes` | Cargar y editar la ropa/apariencia del personaje | Recomendado (se llama directamente por nombre de evento) |
+| `qb-clothing` | Cargar y editar la ropa/apariencia del personaje | Recomendado (se llama directamente por nombre de evento) |
 | `qb-spawn` | Selector de puntos de spawn cuando `SkipSelection = false` | Solo si no usas `SkipSelection` |
 | `DP-Inventory` | Entrega de `id_card` y `phone` al crear personaje | Opcional, falla si no está (revisar `sv_utils.lua`) |
 | `DP-RealMoney` | Sincroniza HUD de dinero (cash/black_money/crypto) | Opcional, se detecta automáticamente con `GetResourceState` |
+
+---
+
+## 📜 API para Desarrolladores (Exports)
+El script provee funciones abiertas (exports) para que otros recursos de tu servidor puedan interactuar con el sistema de personajes de forma centralizada.
+
+1. Añadir un Evento al Historial del Personaje
+Permite registrar hitos importantes (cambios de trabajo, compras, crímenes) en el panel de Historial de Actividad de la pantalla de Opciones del jugador. El historial almacena los últimos 15 eventos en la base de datos (metadata.activityLog).
+
+Sintaxis (Server-side):
+```Lua
+exports['DP-MultiCharacter']:LogCharacterEvent(source, texto, icono)
+```
+
+- source: (Integer) ID del jugador en el servidor.
+- texto: (String) El mensaje o descripción del hito que quieres registrar.
+- icono: (String) Opcional. Clase del icono de FontAwesome (ej. "fa-info-circle", "fa-briefcase"). Si no se pasa, se usa uno por defecto.
+
+Ejemplo de uso en qb-policejob (cuando contratan a un jugador):
+```Lua
+-- En el archivo de servidor del trabajo, justo después de actualizarle el 'job' al jugador:
+exports['DP-MultiCharacter']:LogCharacterEvent(source, "Contratado como agente en la LSPD.", "fa-user-shield")
+```
+
+Ejemplo de uso en un script de robos (al abrir la bóveda):
+```Lua
+exports['DP-MultiCharacter']:LogCharacterEvent(source, "Participó en el robo al Pacific Standard
+```
+
 ---
 
 ## 🚧 Pendientes por implementar
@@ -104,7 +133,7 @@ Debe ser funcional de verdad, con dos modos configurables desde `config.lua` (a 
   - Si es un sistema **custom** propio del servidor, el admin deberá añadir manualmente la integración en `client`/`server` (dejar preparado el punto de enganche, claramente señalado en el código).
 - **Modo "URL externa (Google Form / tienda web, etc.)"**: el modal simplemente enlaza a una URL de compra externa; la asignación real de los slots comprados la hace el admin **manualmente** desde archivos/BD tras recibir el pago.
 
-### 3. Exportar Personaje (funcional)
+### 2. Exportar Personaje (funcional)
 - Encima del recuadro de "código generado", mostrar una lista de los personajes disponibles del usuario, **cada uno con un checkbox**. El usuario debe poder seleccionar entre **2 y 7 personajes** (mínimo 2, máximo 7 = límite máximo de slots del sistema) para exportar de una vez.
 - El código generado (en JSON o XML, según el toggle) debe incluir el **detalle completo** de cada personaje seleccionado:
   - ID único de exportación (para poder verificarlo luego al importar).
@@ -118,7 +147,7 @@ Debe ser funcional de verdad, con dos modos configurables desde `config.lua` (a 
 - Crear en base de datos una tabla nueva, **`exportacion_multicharacters`**, que guarde estos datos exportados junto a su ID único.
 - Botón de "Copiar" debe quedar plenamente funcional (ya lo está a nivel UI, falta el contenido real).
 
-### 4. Importar Personaje (funcional)
+### 3. Importar Personaje (funcional)
 - Al pegar el código y pulsar "Importar", el sistema debe:
   1. Buscar en la base de datos (`exportacion_multicharacters`) el registro cuyo ID único coincida (formato: 10 caracteres alfanuméricos, ej. `1G51E3KKA0`).
   2. Verificar que el contenido no haya sido alterado/corrompido respecto al guardado originalmente.
@@ -126,77 +155,40 @@ Debe ser funcional de verdad, con dos modos configurables desde `config.lua` (a 
 - Caso de uso: un jugador crea y exporta un personaje, se lo pasa a un amigo (Discord, etc.), y al importarlo, el amigo recibe una copia jugable de ese personaje asociada a su cuenta.
 - El personaje exportado sigue existiendo también para quien lo exportó; si quiere borrarlo de su propia lista, es decisión suya (borrado normal). Pero **una vez exportado, el registro en `exportacion_multicharacters` no se puede eliminar desde la UI** — solo el owner del servidor puede borrarlo manualmente desde la base de datos.
 
-### 5. Spawn Preferido
+### 4. Spawn Preferido
 Pendiente de revisar más adelante, cuando se implemente un sistema de Spawn propio dentro de `DP-MultiCharacter` (para no depender de tener la lógica repartida en dos scripts distintos como ahora con `qb-spawn`).
 
-### 8. Reportar Bug (funcional + integración con DP-AdminMenu)
+### 5. Reportar Bug (funcional + integración con DP-AdminMenu)
 - El mensaje que escriba el usuario debe llegar a los administradores a través de `DP-AdminMenu`, soportando tanto texto como imágenes adjuntas.
 - Crear un comando configurable en `config.lua`, por ejemplo `/restart-ui [ID del jugador]`, que permita a un admin **reiniciar el script de `DP-MultiCharacter` únicamente para ese jugador concreto** (quitárselo y volver a cargárselo), útil cuando a alguien se le ha bugueado la interfaz o no le cargan cosas correctamente.
 - Dejar la puerta abierta a añadir más herramientas de soporte para administradores en el futuro.
 
-### 9. Discord / Ayuda — configurable (Web y/o Discord)
-- En `config.lua`, añadir un apartado para decidir si se ofrece enlace de ayuda por **Web externa**, por **Discord**, o **ambos** (dos booleanos independientes).
-- Debajo, los campos de URL correspondientes (URL de la web si está activada, URL de invitación de Discord si está activado).
-- El modal debe mostrar solo las opciones activadas según ese config.
-- Junto a cada URL, añadir un botón de **"Copiar"** funcional (para poder pegarla donde se quiera).
-- **Quitar el botón de "Abrir enlace"** que hay actualmente — dejar únicamente el botón "Cerrar" ocupando el 100% del ancho disponible.
-
-### 10. Exportar individual desde la tabla de Opciones
+### 6. Exportar individual desde la tabla de Opciones
 El botón de exportar de cada fila en la tabla debe abrir el **mismo modal** de Exportar/Importar, pero en una variante simplificada: sin el selector de personajes (checklist), ya que aplica únicamente al personaje de esa fila concreta. Solo debe mostrar el selector de Formato (JSON/XML) y el recuadro de código generado con todos los datos de ese personaje.
 
-### 11. Comando de Logout funcional (`Config.CommandLogOut`)
-Actualmente el comando está definido en el config pero no hace nada. Debe: quitar al jugador el personaje actualmente cargado y volver a mostrarle la interfaz completa de `DP-MultiCharacter` desde cero (Landing: Continuar / Personajes / Opciones), permitiéndole elegir o cambiar de personaje libremente cuando quiera.
-
-### 12. Selector de Spawn estilo imágenes del discord
+### 7. Selector de Spawn estilo imágenes del discord
 Cuando se desarrolle el sistema de Spawn propio (ver punto 5), debe presentarse como las referencias visuales ya compartida por Discord, alimentada dinámicamente desde `Config.SpawnPoints` (label, descripción, imagen, coords)... El SkipSelection, DefaultSpawn y todo lo demas...
 
-### 13. Modal de bienvenida al crear personaje (Start Items)
-Al crear un personaje nuevo (antes de que salga el qb-clothing), debe aparecer un modal/NUI (según referencia visual ya compartida por Discord) mostrando los ítems de bienvenida que va a recibir, configurado dinámicamente a partir de `Config.StartItemsList`.
+### 8. Mo spawnea donde debe
+Cuando creo un personaje de 0 me da los items seleccionados/comprados en el Start Items... la cosa es que NO GUARDA LA ULTIMA POSICION DEL PERSONAJE NI EL INVENTARIO NI NADA, si yo aparezco con ese personaje creado despues de personalizar con el qb-clothing, uso el /logout o salgo y entro del servidor o tiro de restart script, vuelvo a seleccionar ese personaje, NO me pone ese personaje creado en la ultima ubicacion donde lo deje, NO me da esos items que tenia comprados (es como que detecta que es personaje nuevo otra vez y unicamente me da los 5. del banco de nuevo + los 500 en efectivo...), no ah guardado la ropa puesta, no guarda el personaje editado y demas... entonces... que? que coño pasa? tal vez por el Config.Interior porque originalmente el Config.Interior era porque aparecia dentro de un apartamenento y debia salir de dicho departamento para guardar cosas y ahora no porque es un mapeado bajo tierra que siempre es visible y aparece en el campo de golf? o a que se debe? ![alt text](image.png), ![alt text](image-1.png), ![alt text](image-2.png), ![alt text](image-3.png), ![alt text](image-4.png), ![alt text](image-5.png)
 
-### 14. Ocultar Exportar si `Config.ExportCharacters = false`
-Si esta opción del config está desactivada, **todos** los botones y modales relacionados con exportar personajes (tanto el general del sidebar como el individual de cada fila de la tabla) deben quedar completamente ocultos de la UI. Solo visibles si está en `true`.
-
-### 15. Ocultar Importar si `Config.ImportCharacters = false`
-Mismo criterio que el punto 14, aplicado al botón/modal de Importar Personaje.
-
-### 16. Usar `Config.DefaultMaleModel` / `Config.DefaultFemaleModel` en vez de strings hardcodeados
-Revisar **todos** los archivos del recurso y sustituir cualquier referencia literal a `"mp_m_freemode_01"` / `"mp_f_freemode_01"` por una lectura real de `Config.DefaultMaleModel` / `Config.DefaultFemaleModel`, para que cambiar el modelo base desde el config funcione de verdad en todos los puntos donde se usa (spawn de peds, preview de género, etc.).
-
-### 17. Completar todos los locales (traducción íntegra)
+### 9. Completar todos los locales (traducción íntegra)
 Revisar `locales/es.lua` y el resto de idiomas (`en`, `fr`, `it`, `de`, `pt`) para que **absolutamente todo el texto del script** pase por el sistema de traducciones (`_U()` / `data-trans`) — sin textos sueltos hardcodeados en español directamente en el HTML/JS/CLIENTS/SERVERS que se queden sin traducir al cambiar `Config.Locale` (Incluidos los Prints/Console.logs).
 
-### 18. Seguridad — Validación server-side de todos los datos de creación de personaje
-Ahora mismo la validación de nombre/apellidos/edad/nacionalidad ocurre solo en el frontend (`validators.js`). Un cliente modificado (menú de trainer, NUI editado) podría saltarse esas comprobaciones y mandar directamente el evento `DP-MultiCharacter:server:createCharacter` con datos inválidos o maliciosos. Replicar en `sv_main.lua` las mismas validaciones (longitud de nombre/apellidos, regex de caracteres permitidos, rango de fecha de nacimiento según `Config.MinAge`/`Config.MaxAge`, nacionalidad dentro de `Config.Nationalities`) antes de llamar a `QBCore.Player.Login`, rechazando y logueando el intento si algo no cuadra.
-
-### 19. Seguridad — Rate limiting en acciones sensibles (crear, borrar, reordenar, exportar/importar)
-Añadir un límite de frecuencia por jugador (por ejemplo, con una tabla en memoria `lastActionTimestamp[license]`) para evitar spam/abuso de eventos críticos: crear personajes en bucle, borrar y recrear repetidamente, reordenar sin parar, o generar exportaciones en cadena para intentar fuerza bruta sobre el ID único de importación. Cada acción debe tener su propio cooldown razonable configurable en `config.lua`.
-
-### 20. Seguridad — Anti-duplicación en Importar Personaje
+### 10. Seguridad — Anti-duplicación en Importar Personaje
 Cuando se implemente el punto 4, contemplar el caso de que el **mismo código de importación se use varias veces** (por el mismo usuario o por usuarios distintos a la vez, ej. dos personas pegando el código casi simultáneamente). Definir en `config.lua` si un mismo ID de exportación se puede importar una única vez en total, un número limitado de veces, o de forma ilimitada — y aplicarlo con un lock/transacción en `sv_database.lua` para que no se puedan colar dos importaciones simultáneas del mismo código antes de que la primera termine de procesarse.
 
-### 21. UX — Estados de carga (loading) en acciones asíncronas
-Ninguna acción que depende del servidor (crear personaje, borrar, reordenar, exportar/importar cuando existan) muestra actualmente un estado de "cargando" mientras se espera la respuesta de Lua. Añadir spinners/estados deshabilitados en los botones relevantes mientras la petición está en curso, para evitar que el usuario pulse varias veces pensando que no ha funcionado (lo cual además agravaría el punto 19).
-
-### 22. Gestión — Marcar personaje como favorito
+### 11. Gestión — Marcar personaje como favorito
 El botón "Marcar como favorito" existe visualmente en el roadmap pero no está desarrollado como punto propio. Al marcarlo, ese personaje debe aparecer destacado visualmente en la lista de "Personajes" (por ejemplo con una estrella o borde distinto) y ordenarse primero por defecto en la tabla de Opciones. Guardar el estado de favorito en base de datos (metadata o tabla nueva), asociado al `citizenid`.
 
-### 23. Gestión — Personaje por defecto (independiente del "último usado")
+### 12. Gestión — Personaje por defecto (independiente del "último usado")
 Actualmente el botón "Continuar con tu historia" siempre carga el personaje con el `cid` más bajo (`plyChars[1]`). Permitir que el jugador fije explícitamente **cuál** quiere que sea su personaje por defecto para ese botón, independientemente de cuál usó por última vez o de su número de slot — guardarlo en base de datos y usarlo en `sv_database.lua` al calcular `lastCharacter`.
 
-### 24. Gestión — Historial de actividad por personaje
-Ampliar el panel de detalle (o la pantalla de Opciones) con un pequeño historial por personaje: fecha de creación, número de veces que se ha jugado (sesiones), y opcionalmente un log simple de eventos relevantes (cambios de trabajo, ingreso/salida de banda). Útil tanto para el jugador como para moderación si hay disputas.
-
-### 25. Administración — Panel de estadísticas globales del servidor (server-side)
+### 13. Administración — Panel de estadísticas globales del servidor (server-side)
 Crear un comando o export pensado para administradores (o integrable en `DP-AdminMenu`) que devuelva estadísticas agregadas del sistema de personajes: número total de personajes activos en el servidor, media de slots usados por jugador, personajes creados en las últimas 24h/7 días, y personajes actualmente en `PROCESO_ELIMINACION` (ver punto 2) pendientes de purga.
 
-### 26. Administración — Log de auditoría de acciones críticas
+### 14. Administración — Log de auditoría de acciones críticas
 Registrar en una tabla propia (`multicharacter_audit_log` o similar) cada acción sensible que ocurra: creación, borrado (y quién lo confirmó), reordenamiento, exportación e importación de personajes — con `license`, `citizenid` afectado, timestamp y tipo de acción. Sirve tanto para depurar problemas reportados por jugadores como para que un admin pueda investigar un caso de abuso o duplicación.
 
-### 27. Rendimiento — Cachear la consulta de `setupCharacters` en servidor
-Cada vez que se abre la UI (`setupCharacters`) se lanza una query completa con `LEFT JOIN` a `playerskins`. Si el jugador entra y sale del selector varias veces seguidas (por ejemplo cancelando creación de personaje), se repite la misma consulta sin necesidad. Añadir una caché en memoria de corta duración (unos segundos) por `license`, invalidándola inmediatamente tras cualquier escritura (crear, borrar, reordenar) para no servir datos desactualizados.
-
-### 28. Rendimiento — Revisar el hilo de densidad de tráfico/peds en `SetupCamera`
-El hilo que fuerza a `0.0` los multiplicadores de densidad de peds/vehículos mientras la cámara del selector está activa se ejecuta en bucle (`CreateThread` sin `Wait` explícito entre iteraciones salvo el implícito). Revisar que tenga un `Wait` razonable (aunque sea 0 o 100ms) para no consumir ciclos de CPU innecesarios del hilo principal del cliente mientras el jugador simplemente está mirando el menú sin interactuar.
-
-### 29. Técnico — Manejo de errores y timeouts en las llamadas `axios.post` del NUI
-Actualmente varias llamadas `axios.post` desde `app.js` no gestionan el caso de que la promesa falle o tarde demasiado (el NUI podría quedarse esperando indefinidamente una respuesta que nunca llega, por ejemplo si el recurso Lua se reinicia a mitad de una petición). Añadir un `.catch()` consistente en todas las llamadas relevantes, con un timeout razonable y un mensaje de error visible en la UI en vez de fallar en silencio, para que la interfaz nunca se quede "colgada" esperando al servidor.
+### 14. Problemas con los Loading
+Cuando yo le doy a un boton que tenga el loading, mientras sale el circulo cargando ese, puedo darle a CUALQUIER OTRO BOTON, OTROS INPUTS, PUEDO HACER OTRAS COSAS mientras carga... eso puede causar problemas, hay que hacer que BLOQUEE todo mientras está cargando con los loadings, porque si le doy por ejemplo a crear personaje, rapido escape que me saca para atras, selecciono otro personaje y le doy a jugar o crear otro, si lo hago rapido, puedo ROMPER EL SCRIPT ENTERO... y no es con lo unico, puedo comprar slots infinitos y acer otras cosas como abrir otros menus o abrir modals, cancelar cosas, duplicar y demas mientras estan cargandose estos LOADINGS...

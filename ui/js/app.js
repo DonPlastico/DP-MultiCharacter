@@ -21,6 +21,39 @@ let randomSlotGenders = {}; // Variable para guardar los géneros
 let hideLockedSlots = false; // Si true, los slots vacíos ("bloqueados") NO se muestran en el selector
 const HIDE_LOCKED_STORAGE_KEY = 'dpmc_hide_locked'; // localStorage (fallback rápido solo-UI)
 const VOLUME_STORAGE_KEY = 'dpmc_interface_volume'; // localStorage (arranque rápido, la BD manda)
+let exportCharactersEnabled = true; // Config.ExportCharacters (Lua manda el valor real al abrir la UI)
+let importCharactersEnabled = true; // Config.ImportCharacters (Lua manda el valor real al abrir la UI)
+let startingItemsData = []; // Los items que nos manda Lua desde el config
+let startingBudget = 0;     // El dinero que nos dice Lua que tendremos al empezar
+let cartItems = {};         // { "water": 2, "bread": 1 }
+let cartTotal = 0;          // Total a pagar
+
+// ==========================================
+// 🛡️ CONFIGURACIÓN GLOBAL DE RED (AXIOS)
+// ==========================================
+// Establecer un timeout máximo de 8 segundos (8000ms) para TODAS las peticiones
+axios.defaults.timeout = 8000;
+
+// Interceptor para capturar automáticamente CUALQUIER error de conexión
+axios.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        DebugPrint("Error de red interceptado: " + (error.message || error));
+
+        let errorMsg = Translate('ui_error_server', 'Error interno al procesar la solicitud en el servidor.');
+
+        // Comprobar si el error fue por superar el timeout
+        if (error.code === 'ECONNABORTED' || (error.message && error.message.includes('timeout'))) {
+            errorMsg = Translate('ui_error_timeout', 'Tiempo de espera agotado. El servidor no responde o se ha reiniciado.');
+        }
+
+        // Alerta visual con el modal custom
+        showAlert(errorMsg, Translate('ui_error_title', 'ERROR DE CONEXIÓN'), "error");
+
+        // Rechazar la promesa para que salte a los .catch() individuales y libere los botones
+        return Promise.reject(error);
+    }
+);
 
 // ==========================================
 // 🛠️ FUNCIÓN DE DEPURACIÓN (DEBUG)
@@ -68,6 +101,31 @@ function setFooterZoomState(zoomed) {
 }
 
 // ==========================================
+// ⏳ ESTADOS DE CARGA (LOADING)
+// ==========================================
+function setButtonLoading(btn, isLoading) {
+    if (!btn) return;
+    if (isLoading) {
+        // Guardamos el HTML original si no se ha guardado aún
+        if (!btn.dataset.originalHtml) {
+            btn.dataset.originalHtml = btn.innerHTML;
+        }
+        // Fijamos el ancho actual para evitar que el botón "encoja" al poner el spinner
+        btn.style.minWidth = btn.offsetWidth + 'px';
+        btn.disabled = true;
+        btn.style.pointerEvents = 'none';
+        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+    } else {
+        btn.disabled = false;
+        btn.style.pointerEvents = 'auto';
+        if (btn.dataset.originalHtml) {
+            btn.innerHTML = btn.dataset.originalHtml;
+        }
+        btn.style.minWidth = '';
+    }
+}
+
+// ==========================================
 // 📅 FUNCIONES GLOBALES DEL CALENDARIO CUSTOM
 // ==========================================
 function getAgeYearRange() {
@@ -91,8 +149,34 @@ function applyAgeLimitsToFlatpickr(instance) {
     DebugPrint(`Límites del datepicker recalculados. Años permitidos: ${oldestYear} - ${newestYear}`);
 }
 
+// ==========================================
+// ⚠️ SISTEMA DE ALERTAS CUSTOM (Sustituye alert())
+// ==========================================
+function showAlert(msg, title = "ATENCIÓN", type = "error") {
+    const modal = document.getElementById('modal-alert');
+    document.getElementById('alert-title').innerText = title;
+    document.getElementById('alert-message').innerText = msg;
+
+    const icon = document.getElementById('alert-icon');
+    if (type === "error") {
+        icon.className = 'fas fa-exclamation-triangle warning-icon';
+    } else {
+        icon.className = 'fas fa-info-circle modal-icon';
+    }
+
+    modal.style.display = 'flex';
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     DebugPrint("DOM cargado. Inicializando eventos principales de la interfaz.");
+
+    // Botón de cierre del modal de alerta
+    const btnAlertOk = document.getElementById('btn-alert-ok');
+    if (btnAlertOk) {
+        btnAlertOk.addEventListener('click', () => {
+            document.getElementById('modal-alert').style.display = 'none';
+        });
+    }
 
     // Cargar el volumen de interfaz guardado (localStorage por ahora; ver saveInterfaceVolume)
     const storedVolume = localStorage.getItem('dpmc_interface_volume');
@@ -137,7 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 // SOLUCIÓN BUG DEL MES EXACTO: Solo le pasamos el "index" y false.
                 instance.changeMonth(index, false);
                 closePickerPanels(panel, yearPanelRef, instance);
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
             });
             grid.appendChild(btn);
         });
@@ -205,7 +288,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.stopPropagation();
                 instance.changeYear(year);
                 closePickerPanels(monthPanelRef, yearPanel, instance); // <--- Pasamos instance
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
             });
 
             list.appendChild(btn);
@@ -347,7 +429,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 syncPickerSelection(instance, monthPanelRef, yearPanelRef);
                 monthPanelRef.classList.add('visible');
                 instance.calendarContainer.classList.add('fp-panel-open');
-                if (typeof Sounds !== 'undefined') Sounds.playNav();
             });
 
             yearInputWrapper.querySelector('.numInput.cur-year').addEventListener('click', (e) => {
@@ -356,7 +437,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 populateYearPicker(instance, yearPanelRef);
                 yearPanelRef.classList.add('visible');
                 instance.calendarContainer.classList.add('fp-panel-open');
-                if (typeof Sounds !== 'undefined') Sounds.playNav();
             });
         },
         onMonthChange: function (selectedDates, dateStr, instance) {
@@ -375,7 +455,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (instance.updateYearButtons) instance.updateYearButtons(); // Re-comprobar bloqueos
         },
         onChange: function () {
-            if (typeof Sounds !== 'undefined') Sounds.playSelect();
         }
     });
 
@@ -425,6 +504,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderNationalities(nationalitiesData);
             }
 
+            // Recibir configuración de Starter Items y dinero
+            if (data.startingItems) {
+                startingItemsData = data.startingItems;
+            }
+            if (data.startingBudget !== undefined) {
+                startingBudget = data.startingBudget;
+            }
+
             // Guardar la edad mínima/máxima configurada en Lua (Config.MinAge / Config.MaxAge)
             // y recalcular los límites del datepicker de fecha de nacimiento en consecuencia.
             if (data.minAge !== undefined) minAge = data.minAge;
@@ -466,10 +553,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.refreshSoundSlider(interfaceVolume);
             }
 
+            // Configuración de ayuda/soporte (Web y/o Discord) enviada desde Lua:
+            if (data.helpConfig) {
+                helpConfig = data.helpConfig;
+                DebugPrint("Configuración de ayuda sincronizada desde Lua: " + JSON.stringify(helpConfig));
+            }
+
+            // Visibilidad de Exportar/Importar Personaje según Config.ExportCharacters / Config.ImportCharacters.
+            // Si vienen definidos, aplicamos el estado; si no, no tocamos nada (evita ocultar por error
+            // en mensajes toggleUI parciales, como el que solo trae interfaceVolume tras abrir la UI).
+            if (data.exportCharacters !== undefined) {
+                exportCharactersEnabled = !!data.exportCharacters;
+            }
+            if (data.importCharacters !== undefined) {
+                importCharactersEnabled = !!data.importCharacters;
+            }
+            if (data.exportCharacters !== undefined || data.importCharacters !== undefined) {
+                applyExportImportVisibility();
+            }
+
+
             DebugPrint("Evento 'toggleUI' recibido. Estado: " + data.state);
             document.getElementById('app').style.display = data.state ? "block" : "none";
 
             if (data.state) {
+                resetCharacterListState(); // Limpia cualquier panel/selección residual de una sesión anterior (p.ej. tras /logout)
                 showScreen('landing-screen');
                 randomizeCardShines();
                 DebugPrint("Solicitando setupCharacters a Lua mediante NUI Post.");
@@ -558,7 +666,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 DebugPrint("Click en tarjeta de imagen del landing. Índice: " + index);
                 currentLandingIndex = index;
                 updateLandingHover(currentLandingIndex);
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
             }
         });
 
@@ -586,6 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const openModals = Array.from(document.querySelectorAll('.modal-overlay')).filter(m => m.style.display === "flex");
             if (openModals.length > 0) {
                 DebugPrint("Cerrando modal mediante tecla ESC.");
+                if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 openModals.forEach(m => {
                     // El modal de ocultar bloqueados descarta los cambios sin guardar
                     if (m.id === 'modal-hide-locked' && typeof window.closeHideLockedModal === 'function') {
@@ -594,20 +702,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     m.style.display = "none";
                 });
-                if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 return;
             }
             // Cancelar el formulario de registro de personaje
             if (document.getElementById('character-register').style.display === "block") {
                 DebugPrint("Registro cancelado mediante tecla ESC.");
-                document.getElementById('btn-cancel-reg').click();
+                document.getElementById('btn-cancel-reg').click(); // El listener global de click ya reproduce sonido
                 return;
             }
             // Salir de la pantalla de opciones de vuelta al landing
             if (document.getElementById('options-screen').style.display === "block") {
                 DebugPrint("Saliendo de la pantalla de opciones. Volviendo al Landing.");
-                showScreen('landing-screen');
                 if (typeof Sounds !== 'undefined') Sounds.playCancel();
+                showScreen('landing-screen');
                 return;
             }
 
@@ -615,6 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (document.getElementById('character-list').style.display === "block") {
                 if (isZoomed) {
                     DebugPrint("Quitando zoom y restaurando vista general desde ESC.");
+                    if (typeof Sounds !== 'undefined') Sounds.playCancel();
                     isZoomed = false;
                     isUnfocusing = true; // Bloquea nuevas selecciones hasta que la cámara termine de alejarse
                     navQueue = [];
@@ -629,7 +737,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.getElementById('detailed-char-info').classList.add('hidden');
 
                     axios.post(`https://${resName}/unfocusCharacter`, JSON.stringify({}));
-                    if (typeof Sounds !== 'undefined') Sounds.playCancel();
 
                     // Esperamos a que la cámara termine de alejarse (misma duración que en cl_main.lua)
                     // antes de volver a mostrar el selector de slots y permitir elegir otro personaje.
@@ -643,28 +750,31 @@ document.addEventListener('DOMContentLoaded', () => {
                     }, UNFOCUS_DURATION);
                 } else {
                     DebugPrint("Saliendo de la lista de personajes. Volviendo al Landing.");
-                    showScreen('landing-screen');
                     if (typeof Sounds !== 'undefined') Sounds.playCancel();
+                    showScreen('landing-screen');
                 }
                 return;
             }
+            // Ninguna condición anterior aplicó: ESC no hace nada en este contexto, así
+            // que deliberadamente NO se reproduce ningún sonido aquí.
         }
 
         // Flechas para navegar entre personajes lateralmente cuando el panel de detalle está enfocado (zoom)
         if (document.getElementById('character-list').style.display === "block" && isZoomed) {
             if (e.key === "ArrowRight") {
                 DebugPrint("Navegando al siguiente personaje (Flecha Derecha).");
+                if (typeof Sounds !== 'undefined') Sounds.playNav();
                 navigateCharacter(1);
                 return;
             } else if (e.key === "ArrowLeft") {
                 DebugPrint("Navegando al personaje anterior (Flecha Izquierda).");
+                if (typeof Sounds !== 'undefined') Sounds.playNav();
                 navigateCharacter(-1);
                 return;
             } else if (e.key === "Enter") {
                 // Simular clic en el botón principal (JUGAR o CREAR)
                 DebugPrint("Pulsado ENTER. Simulando clic en acción principal.");
-                document.getElementById('main-action-btn').click();
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+                document.getElementById('main-action-btn').click(); // El listener global de click ya reproduce sonido
                 return;
             }
         }
@@ -672,27 +782,36 @@ document.addEventListener('DOMContentLoaded', () => {
         // Navegación con flechas para el Landing Screen inicial
         if (document.getElementById('landing-screen').style.display !== "none") {
             if (e.key === "ArrowRight") {
-                currentLandingIndex = Math.min(2, currentLandingIndex + 1);
+                const newIndex = Math.min(2, currentLandingIndex + 1);
+                if (newIndex !== currentLandingIndex && typeof Sounds !== 'undefined') Sounds.playNav();
+                currentLandingIndex = newIndex;
                 updateLandingHover(currentLandingIndex);
-                if (typeof Sounds !== 'undefined') Sounds.playNav();
             } else if (e.key === "ArrowLeft") {
                 let minIndex = charactersData.length > 0 ? 0 : 1;
-                currentLandingIndex = Math.max(minIndex, currentLandingIndex - 1);
+                const newIndex = Math.max(minIndex, currentLandingIndex - 1);
+                if (newIndex !== currentLandingIndex && typeof Sounds !== 'undefined') Sounds.playNav();
+                currentLandingIndex = newIndex;
                 updateLandingHover(currentLandingIndex);
-                if (typeof Sounds !== 'undefined') Sounds.playNav();
             } else if (e.key === "Enter") {
                 DebugPrint("Ejecutando acción del Landing Screen (Enter). Botón: " + currentLandingIndex);
-                landBtns[currentLandingIndex].click();
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
+                landBtns[currentLandingIndex].click(); // El listener global de click ya reproduce sonido
             }
         }
     });
 
     // Acción directa para Jugar con el último personaje
-    document.getElementById('btn-land-play').addEventListener('click', () => {
+    document.getElementById('btn-land-play').addEventListener('click', (e) => {
         if (lastCharacter) {
             DebugPrint("Acción rápida: Jugar con el personaje principal.");
-            axios.post(`https://${resName}/playCharacter`, JSON.stringify({ cData: lastCharacter }));
+            const btn = e.currentTarget;
+            setButtonLoading(btn, true);
+
+            // Falsa carga de 1.5s antes de decirle a Lua que nos meta al servidor
+            setTimeout(() => {
+                axios.post(`https://${resName}/playCharacter`, JSON.stringify({ cData: lastCharacter }))
+                    .catch(() => DebugPrint("Petición playCharacter abortada o fallida."))
+                    .finally(() => setButtonLoading(btn, false));
+            }, 1500);
         }
     });
 
@@ -709,7 +828,6 @@ document.addEventListener('DOMContentLoaded', () => {
         OptionsTable.reset();
         OptionsTable.render();
         updateOptionsStats();
-        if (typeof Sounds !== 'undefined') Sounds.playSelect();
     });
 
     // === LÓGICA DE CLIC EN LOS SLOTS INDIVIDUALES ===
@@ -740,17 +858,24 @@ document.addEventListener('DOMContentLoaded', () => {
             if (selectedSlot !== null) {
                 DebugPrint("Abriendo modal de confirmación de borrado para el slot: " + selectedSlot);
                 document.getElementById('delete-modal').style.display = "flex";
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
             }
         });
     }
 
-    // Acción unificada del botón central gigante (Jugar o Crear) dependiendo de si el slot está ocupado
-    document.getElementById('main-action-btn').addEventListener('click', () => {
+    // Acción unificada del botón central gigante (Jugar o Crear)
+    document.getElementById('main-action-btn').addEventListener('click', (e) => {
         const charData = charactersData.find(c => c.cid === selectedSlot);
+        const btn = e.currentTarget;
+
         if (charData) {
             DebugPrint("Enviando petición a servidor para jugar con CitizenID: " + charData.citizenid);
-            axios.post(`https://${resName}/playCharacter`, JSON.stringify({ cData: charData }));
+            setButtonLoading(btn, true);
+
+            setTimeout(() => {
+                axios.post(`https://${resName}/playCharacter`, JSON.stringify({ cData: charData }))
+                    .catch(() => DebugPrint("Petición playCharacter abortada o fallida."))
+                    .finally(() => setButtonLoading(btn, false));
+            }, 1500);
         } else {
             DebugPrint("El slot está vacío. Abriendo formulario de registro de personaje.");
             showScreen('character-register');
@@ -781,19 +906,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Envío del formulario de registro
-    document.getElementById('btn-create-reg').addEventListener('click', () => {
+    // Objeto global temporal para guardar los datos del personaje mientras el jugador compra
+    let pendingCharacterData = null;
+
+    // Envío del formulario de registro (Paso 1: Validación y transición a Tienda)
+    document.getElementById('btn-create-reg').addEventListener('click', (e) => {
         const firstname = document.getElementById('reg-firstname').value.trim();
         const lastname = document.getElementById('reg-lastname').value.trim();
         const dob = document.getElementById('reg-dob').value;
 
         const validation = Validator.validateForm(firstname, lastname, dob, selectedGender, selectedNationality);
         if (!validation.valid) {
-            alert(validation.msg);
+            showAlert(validation.msg, "ERROR DE VALIDACIÓN", "error");
             return;
         }
 
-        const data = {
+        // Guardamos los datos para usarlos luego
+        pendingCharacterData = {
             cid: selectedSlot,
             firstname: firstname,
             lastname: lastname,
@@ -802,12 +931,92 @@ document.addEventListener('DOMContentLoaded', () => {
             nationality: selectedNationality
         };
 
-        DebugPrint("Enviando petición createCharacter para nuevo personaje.");
-        axios.post(`https://${resName}/createCharacter`, JSON.stringify(data));
+        DebugPrint("Formulario validado. Abriendo pantalla de Starting Items.");
 
-        // Limpiamos el formulario AQUÍ, ya que el personaje se va a crear correctamente
-        resetForm();
+        // Renderizamos la tienda de cero y la mostramos
+        renderStarterItems();
+        showScreen('starter-items-screen');
     });
+
+    // Acción del botón inferior de la Tienda (Purchase / Skip)
+    document.getElementById('btn-starter-purchase').addEventListener('click', () => {
+        let totalItemsInCart = 0;
+        for (const qty of Object.values(cartItems)) {
+            totalItemsInCart += qty;
+        }
+
+        if (totalItemsInCart > 0) {
+            const summaryList = document.getElementById('starter-summary-list');
+            summaryList.innerHTML = '';
+
+            startingItemsData.forEach(item => {
+                const qty = cartItems[item.name];
+                if (qty > 0) {
+                    const price = getModifiedPrice(item.price);
+                    const lineTotal = price * qty;
+                    const priceDisplay = price === 0 ? "GRATIS" : `$${lineTotal.toLocaleString()}`;
+                    const imageName = item.name.toLowerCase();
+
+                    summaryList.innerHTML += `
+                        <div class="starter-summary-item">
+                            <span class="starter-summary-item-name">
+                                <img src="items/${imageName}.png" onerror="this.style.display='none';">
+                                ${qty}x ${item.name}
+                            </span>
+                            <span>${priceDisplay}</span>
+                        </div>
+                    `;
+                }
+            });
+            document.getElementById('starter-summary-price').innerText = `$${cartTotal.toLocaleString()}`;
+            document.getElementById('modal-starter-confirm').style.display = 'flex';
+        } else {
+            submitFinalCharacterCreation(null);
+        }
+    });
+
+    // Cancelar en el Modal de Confirmación del Carrito
+    document.getElementById('btn-starter-cancel').addEventListener('click', () => {
+        document.getElementById('modal-starter-confirm').style.display = 'none';
+    });
+
+    // Confirmar Compra y Enviar a Lua
+    document.getElementById('btn-starter-accept').addEventListener('click', (e) => {
+        document.getElementById('modal-starter-confirm').style.display = 'none';
+
+        // Filtramos cartItems para mandar solo los que tienen cantidad > 0
+        let purchasedItems = {};
+        for (const [itemName, qty] of Object.entries(cartItems)) {
+            if (qty > 0) purchasedItems[itemName] = qty;
+        }
+
+        submitFinalCharacterCreation(purchasedItems);
+    });
+
+    // Función que consolida el envío final al servidor
+    function submitFinalCharacterCreation(cartPayload) {
+        if (!pendingCharacterData) return;
+
+        const finalData = {
+            ...pendingCharacterData,
+            cart: cartPayload,
+            cartTotal: cartTotal
+        };
+
+        DebugPrint("Enviando petición createCharacter a Lua con el carrito incluido.");
+        const btnPurchase = document.getElementById('btn-starter-purchase');
+        setButtonLoading(btnPurchase, true);
+
+        setTimeout(() => {
+            axios.post(`https://${resName}/createCharacter`, JSON.stringify(finalData))
+                .catch(() => DebugPrint("Petición createCharacter abortada o fallida."))
+                .finally(() => {
+                    setButtonLoading(btnPurchase, false);
+                    resetForm();
+                    pendingCharacterData = null;
+                });
+        }, 1500);
+    }
 
     // Cancelar el registro y volver a la vista general de personajes
     document.getElementById('btn-cancel-reg').addEventListener('click', () => {
@@ -844,32 +1053,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Confirmar borrado definitivo del personaje
-    document.getElementById('btn-modal-confirm').addEventListener('click', () => {
+    document.getElementById('btn-modal-confirm').addEventListener('click', (e) => {
         const charData = charactersData.find(c => c.cid === selectedSlot);
         if (charData) {
             DebugPrint("Confirmado borrado del personaje CitizenID: " + charData.citizenid);
-            axios.post(`https://${resName}/deleteCharacter`, JSON.stringify({ citizenid: charData.citizenid }));
+            const btn = e.currentTarget;
+            setButtonLoading(btn, true);
+            const startTime = Date.now();
 
-            // Ocultar paneles y UI al enviar el borrado
-            document.getElementById('delete-modal').style.display = "none";
-            document.getElementById('detailed-char-info').classList.add('hidden');
-            document.getElementById('action-buttons').style.display = "none";
+            axios.post(`https://${resName}/deleteCharacter`, JSON.stringify({ citizenid: charData.citizenid }))
+                .catch(() => DebugPrint("Petición deleteCharacter abortada o fallida."))
+                .finally(() => {
+                    // Calculamos cuánto tardó el servidor. Si fue instantáneo, forzamos la espera a 1.5s.
+                    const elapsed = Date.now() - startTime;
+                    const waitTime = Math.max(0, 1500 - elapsed);
 
-            // Salimos del zoom igual que con ESC, para que la lista recargue con la cámara ya alejada
-            isZoomed = false;
-            isUnfocusing = true;
-            navQueue = [];
-            isNavigating = false;
-            selectedSlot = null;
-            setFooterZoomState(false);
-            axios.post(`https://${resName}/unfocusCharacter`, JSON.stringify({}));
+                    setTimeout(() => {
+                        setButtonLoading(btn, false);
+                        // Ocultar paneles y UI
+                        document.getElementById('delete-modal').style.display = "none";
+                        document.getElementById('detailed-char-info').classList.add('hidden');
+                        document.getElementById('action-buttons').style.display = "none";
 
-            // La lista se refrescará sola cuando llegue 'characterDeleted' (confirmación del servidor).
-            // Solo re-mostramos los slots cuando la cámara haya terminado de alejarse.
-            setTimeout(() => {
-                document.getElementById('slots-wrapper').classList.remove('slots-hidden');
-                isUnfocusing = false;
-            }, UNFOCUS_DURATION);
+                        // Salimos del zoom
+                        isZoomed = false;
+                        isUnfocusing = true;
+                        navQueue = [];
+                        isNavigating = false;
+                        selectedSlot = null;
+                        setFooterZoomState(false);
+                        axios.post(`https://${resName}/unfocusCharacter`, JSON.stringify({})).catch(() => { });
+
+                        setTimeout(() => {
+                            document.getElementById('slots-wrapper').classList.remove('slots-hidden');
+                            isUnfocusing = false;
+                        }, UNFOCUS_DURATION);
+                    }, waitTime);
+                });
         }
     });
 
@@ -901,7 +1121,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 natDisplay.classList.add('selected');
                 natWrapper.classList.remove('open');
                 natDropdown.classList.add('hidden');
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
             });
 
             natOptionsContainer.appendChild(opt);
@@ -1089,6 +1308,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                     <td class="col-actions">    <!-- 5. Botones -->
                         <div class="table-actions">
+                            <button class="table-btn btn-history-char" title="Historial de Actividad" data-cid="${char.cid}">
+                                <i class="fas fa-clipboard-list"></i>
+                            </button>
                             <button class="table-btn btn-export-char" title="Exportar personaje" data-cid="${char.cid}">
                                 <i class="fas fa-file-export"></i>
                             </button>
@@ -1099,12 +1321,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     </td>
                 `;
 
-                // Acciones
+                // Botón Historial
+                tr.querySelector('.btn-history-char').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.openHistoryModal(char);
+                });
+
+                // Acciones existentes
                 tr.querySelector('.btn-export-char').addEventListener('click', (e) => {
                     e.stopPropagation();
                     DebugPrint("Exportar personaje CID: " + char.cid);
-                    if (typeof Sounds !== 'undefined') Sounds.playSelect();
-                    openExportImportModal('export', char);
+                    window.openExportImportModal('export', char);
                 });
 
                 tr.querySelector('.btn-delete-char').addEventListener('click', (e) => {
@@ -1112,7 +1339,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     selectedSlot = parseInt(char.cid);
                     DebugPrint("Abriendo modal de borrado desde opciones para el slot: " + selectedSlot);
                     document.getElementById('delete-modal').style.display = "flex";
-                    if (typeof Sounds !== 'undefined') Sounds.playSelect();
                 });
 
                 // Drag handle — enganchamos mousedown SOLO al handle
@@ -1122,8 +1348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     e.stopPropagation();
 
                     // Asignamos el tr a una variable temporal ANTES de llamar
-                    // porque currentTarget en mousedown apunta al handle, no al tr
-                    dragSrcRow = tr;                       // ← global en el módulo
+                    dragSrcRow = tr;
                     handleDragStart.call(tr, e);
                 });
 
@@ -1273,19 +1498,24 @@ document.addEventListener('DOMContentLoaded', () => {
                         citizenid: c.citizenid
                     }));
 
-                    if (typeof Sounds !== 'undefined') Sounds.playSelect();
+
+                    // Bloqueamos la tabla visualmente mientras carga
+                    els.tbody.style.opacity = '0.5';
+                    els.tbody.style.pointerEvents = 'none';
 
                     axios.post(`https://${resName}/reorderCharacters`, JSON.stringify({
                         order: orderPayload
                     })).then(() => {
-                        // Tras guardar en BD, volvemos a pedir la lista fresca al servidor
-                        // para que charactersData quede sincronizado con la realidad.
                         DebugPrint("Reorden guardado. Solicitando setupCharacters para refrescar datos...");
                         setTimeout(() => {
                             axios.post(`https://${resName}/setupCharacters`, JSON.stringify({}));
                         }, 250);
                     }).catch(() => {
                         DebugPrint("Aviso: el endpoint /reorderCharacters no respondió.");
+                    }).finally(() => {
+                        // Desbloqueamos la tabla
+                        els.tbody.style.opacity = '1';
+                        els.tbody.style.pointerEvents = 'auto';
                     });
                 }
             }
@@ -1316,7 +1546,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             DebugPrint(`Ordenando por "${key}" (${sortState.dir})`);
-            if (typeof Sounds !== 'undefined') Sounds.playNav();
             render();
         }
 
@@ -1388,8 +1617,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // --- Importar / Exportar Múltiples (top bar) ---
         const btnImportMulti = document.getElementById('btn-import-multi');
         const btnExportMulti = document.getElementById('btn-export-multi');
-        if (btnImportMulti) btnImportMulti.addEventListener('click', () => alert("Próximamente disponible"));
-        if (btnExportMulti) btnExportMulti.addEventListener('click', () => alert("Próximamente disponible"));
+        if (btnImportMulti) btnImportMulti.addEventListener('click', () => showAlert("Esta función estará disponible en futuras actualizaciones.", "PRÓXIMAMENTE", "info"));
+        if (btnExportMulti) btnExportMulti.addEventListener('click', () => showAlert("Esta función estará disponible en futuras actualizaciones.", "PRÓXIMAMENTE", "info"));
 
         // ==========================================
         // INYECCIÓN DE CONTENIDO DEMO PARA LOS MODALES
@@ -1420,11 +1649,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <textarea style="width: 100%; height: 80px; padding: 10px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; outline: none; resize: none;" placeholder="Estaba intentando cargar el personaje 2 y..."></textarea>
             </div>`,
 
-            'modal-discord': `<div style="padding: 20px 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px;">
-                <p style="font-size: 18px; font-weight: 900; color: #5865F2; letter-spacing: 1px; margin-bottom: 5px; margin-top:0;">
-                    <i class="fab fa-discord"></i> discord.gg/tuservidor
-                </p>
-                <p style="font-size: 12px; margin-bottom:0;">Se abrirá el overlay de Steam o tu navegador web.</p>
+            'modal-report-bug': `<div style="padding: 15px; background: rgba(0,0,0,0.3); border: 1px dashed rgba(255,255,255,0.1); color: #ccc; border-radius: 4px; text-align: left;">
+                <p style="font-size: 12px; margin-bottom: 8px; margin-top:0;">Describe el fallo con el mayor detalle posible:</p>
+                <textarea style="width: 100%; height: 80px; padding: 10px; background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; outline: none; resize: none;" placeholder="Estaba intentando cargar el personaje 2 y..."></textarea>
             </div>`
         };
 
@@ -1444,7 +1671,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'btn-buy-slot': 'modal-buy-slots',
             'btn-spawn-pref': 'modal-spawn-pref',
             'btn-report-bug': 'modal-report-bug',
-            'btn-discord': 'modal-discord'
+            // 'btn-discord' se maneja aparte porque necesita renderizado dinámico
         };
 
         for (const [btnId, modalId] of Object.entries(modalBindings)) {
@@ -1455,10 +1682,109 @@ document.addEventListener('DOMContentLoaded', () => {
                     const modal = document.getElementById(modalId);
                     if (modal) {
                         modal.style.display = "flex";
-                        if (typeof Sounds !== 'undefined') Sounds.playSelect();
                     }
                 });
             }
+        }
+
+        // ==========================================
+        // 🌐 DISCORD / AYUDA — RENDERIZADO DINÁMICO SEGÚN helpConfig
+        // ==========================================
+        function renderDiscordModal(config) {
+            helpConfig = config || { enableWeb: false, webURL: '', enableDiscord: false, discordURL: '' };
+            const webBlock = document.getElementById('discord-web-block');
+            const discordBlock = document.getElementById('discord-discord-block');
+            const emptyMsg = document.getElementById('discord-empty-msg');
+            const webUrlEl = document.getElementById('discord-web-url');
+            const discordUrlEl = document.getElementById('discord-discord-url');
+
+            if (!webBlock || !discordBlock || !emptyMsg) return;
+
+            // Reset
+            webBlock.style.display = 'none';
+            discordBlock.style.display = 'none';
+            emptyMsg.style.display = 'none';
+
+            let hasAny = false;
+
+            if (helpConfig.enableWeb && helpConfig.webURL) {
+                webBlock.style.display = 'block';
+                webUrlEl.textContent = helpConfig.webURL;
+                hasAny = true;
+            }
+            if (helpConfig.enableDiscord && helpConfig.discordURL) {
+                discordBlock.style.display = 'block';
+                discordUrlEl.textContent = helpConfig.discordURL;
+                hasAny = true;
+            }
+            if (!hasAny) {
+                emptyMsg.style.display = 'flex';
+            }
+        }
+
+        const discordBtn = document.getElementById('btn-discord');
+        if (discordBtn) {
+            discordBtn.addEventListener('click', () => {
+                DebugPrint("Abriendo modal: modal-discord (con helpConfig dinámico)");
+                renderDiscordModal(helpConfig);
+                const modal = document.getElementById('modal-discord');
+                if (modal) {
+                    modal.style.display = "flex";
+                }
+            });
+        }
+
+        // Botones COPIAR
+        function setupCopyBtn(copyBtnId, urlElId) {
+            const copyBtn = document.getElementById(copyBtnId);
+            const urlEl = document.getElementById(urlElId);
+            if (copyBtn && urlEl) {
+                copyBtn.addEventListener('click', () => {
+                    const text = urlEl.textContent;
+                    if (!text) return;
+
+                    // FIX para FiveM CEF: Usar un textarea temporal
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    textArea.style.top = "0";
+                    textArea.style.left = "0";
+                    textArea.style.position = "fixed";
+                    textArea.style.opacity = "0"; // Que no se vea en pantalla
+                    document.body.appendChild(textArea);
+
+                    textArea.focus();
+                    textArea.select();
+
+                    try {
+                        document.execCommand('copy');
+                        copyBtn.classList.add('copied');
+                        copyBtn.innerHTML = '<i class="fas fa-check"></i> COPIADO';
+                        setTimeout(() => {
+                            copyBtn.classList.remove('copied');
+                            copyBtn.innerHTML = '<i class="fas fa-copy"></i> COPIAR';
+                        }, 1500);
+                    } catch (err) {
+                        DebugPrint("No se pudo copiar al portapapeles.");
+                    }
+
+                    // Limpiamos el DOM
+                    document.body.removeChild(textArea);
+                });
+            }
+        }
+
+        setupCopyBtn('discord-web-copy', 'discord-web-url');
+        setupCopyBtn('discord-discord-copy', 'discord-discord-url');
+
+        // Botón CERRAR del modal Discord
+        const discordCloseBtn = document.getElementById('btn-discord-close');
+        if (discordCloseBtn) {
+            discordCloseBtn.addEventListener('click', () => {
+                const modal = document.getElementById('modal-discord');
+                if (modal) {
+                    modal.style.display = 'none';
+                }
+            });
         }
 
         // ==========================================
@@ -1471,17 +1797,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     // El modal de ocultar bloqueados descarta los cambios sin guardar
                     if (modal.id === 'modal-hide-locked' && typeof window.closeHideLockedModal === 'function') {
                         window.closeHideLockedModal(true);
-                        if (typeof Sounds !== 'undefined') Sounds.playCancel();
                         return;
                     }
                     modal.style.display = 'none';
-                    if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 }
             });
 
-            // Si es el de borrado, exportar/importar, sonidos u ocultar bloqueados,
+            // Si es el de borrado, exportar/importar, sonidos, ocultar bloqueados o Discord/Ayuda,
             // saltamos los botones porque tienen lógica propia
-            if (modal.id === 'delete-modal' || modal.id === 'modal-export-import' || modal.id === 'modal-sound-toggle' || modal.id === 'modal-hide-locked') return;
+            if (modal.id === 'delete-modal' || modal.id === 'modal-export-import' || modal.id === 'modal-sound-toggle' || modal.id === 'modal-hide-locked' || modal.id === 'modal-discord') return;
 
             // Funciones de botones cancelar / confirmar genéricas para las DEMOS
             const closeBtns = modal.querySelectorAll('.btn-modal-cancel, .btn-modal-primary');
@@ -1489,9 +1813,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.addEventListener('click', () => {
                     modal.style.display = 'none';
                     if (btn.classList.contains('btn-modal-cancel')) {
-                        if (typeof Sounds !== 'undefined') Sounds.playCancel();
                     } else {
-                        if (typeof Sounds !== 'undefined') Sounds.playSelect();
                         DebugPrint("Acción de demostración confirmada en " + modal.id);
                     }
                 });
@@ -1626,7 +1948,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 DebugPrint("Abriendo modal de Sonidos de Interfaz.");
                 window.refreshSoundSlider(interfaceVolume);
                 soundModal.style.display = "flex";
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
             });
 
             // Sonido de prueba (botón + barras animadas)
@@ -1647,7 +1968,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     saveInterfaceVolume(interfaceVolume);
                     soundModal.style.display = "none";
                     if (sndPreviewBars) sndPreviewBars.classList.remove('play');
-                    if (typeof Sounds !== 'undefined') Sounds.playSelect();
                 });
             }
 
@@ -1657,7 +1977,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     window.refreshSoundSlider(loadInterfaceVolume());
                     soundModal.style.display = "none";
                     if (sndPreviewBars) sndPreviewBars.classList.remove('play');
-                    if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 });
             }
 
@@ -1709,7 +2028,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 hlTempValue = hideLockedSlots;
                 refreshHideLockedUI(hlTempValue);
                 hlModal.style.display = "flex";
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
             });
         }
 
@@ -1731,7 +2049,6 @@ document.addEventListener('DOMContentLoaded', () => {
             hlCancelBtn.addEventListener('click', () => {
                 DebugPrint("Cerrando modal 'Ocultar Bloqueados' sin guardar. Descartando cambios.");
                 window.closeHideLockedModal(true);
-                if (typeof Sounds !== 'undefined') Sounds.playCancel();
             });
         }
 
@@ -1746,7 +2063,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 hlTempValue = newValue;
                 refreshHideLockedUI(hlTempValue);
-                if (typeof Sounds !== 'undefined') Sounds.playNav();
             });
         }
 
@@ -1775,7 +2091,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 hlModal.style.display = "none";
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
             });
         }
 
@@ -1787,14 +2102,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const expimpTitle = document.getElementById('expimp-title');
         const expimpSubtitle = document.getElementById('expimp-subtitle');
         const expimpConfirmBtn = document.getElementById('expimp-confirm-btn');
+        const expimpSharedOutput = document.getElementById('expimp-shared-output');
         const expimpOutputLabel = document.getElementById('expimp-output-label');
-        const expimpCodeBlock = document.getElementById('expimp-output-code');
-        const expimpCodeContent = document.getElementById('expimp-output-code-content');
-        const expimpTextarea = document.getElementById('expimp-output-textarea');
+        const expimpCodeBlock = document.getElementById('expimp-export-code');
+        const expimpCodeContent = document.getElementById('expimp-export-code-content');
+        const expimpTextarea = document.getElementById('expimp-import-textarea');
         const expimpCopyBtn = document.getElementById('expimp-copy-btn');
-        const expimpFormatBtns = expimpModal ? expimpModal.querySelectorAll('.expimp-format-btn') : [];
 
-        let expimpCurrentFormat = 'json'; // 'json' | 'xml'
+        // Cada toggle (export/import) es independiente: solo activa botones DENTRO de su
+        // propio bloque (data-scope), nunca los del otro bloque.
+        const expimpExportToggle = expimpModal ? expimpModal.querySelector('.expimp-format-toggle[data-scope="export"]') : null;
+        const expimpImportToggle = expimpModal ? expimpModal.querySelector('.expimp-format-toggle[data-scope="import"]') : null;
+
+        let expimpExportFormat = 'json'; // Formato elegido en el bloque Exportar
+        let expimpImportFormat = 'json'; // Formato elegido en el bloque Importar
         let expimpCurrentCharData = null; // Personaje sobre el que se está exportando (null en modo import)
 
         // Genera el texto de ejemplo/placeholder para el bloque de código en modo Export.
@@ -1818,20 +2139,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }, null, 4);
         }
 
-        // Actualiza el panel derecho según el modo (export/import) y el formato elegido
+        // Actualiza el panel derecho compartido según cuál scope (export/import) esté activo
+        // en ese momento (expimpSharedOutput.dataset.activeScope), no según el modo con el que
+        // se abrió el modal — así, aunque se abra en modo "import", si el usuario toca el
+        // toggle de Exportar, el panel derecho cambia a mostrar el código generado, y viceversa.
         function refreshExpimpOutput() {
-            const mode = expimpModal.dataset.mode;
+            const activeScope = expimpSharedOutput.dataset.activeScope;
 
-            if (mode === 'export') {
+            if (activeScope === 'export') {
                 expimpCodeBlock.style.display = 'block';
                 expimpTextarea.style.display = 'none';
                 expimpOutputLabel.innerText = 'Código generado';
-                expimpCodeContent.textContent = buildExportPreview(expimpCurrentFormat, expimpCurrentCharData);
+                expimpCodeContent.textContent = buildExportPreview(expimpExportFormat, expimpCurrentCharData);
             } else {
                 expimpCodeBlock.style.display = 'none';
                 expimpTextarea.style.display = 'block';
                 expimpOutputLabel.innerText = 'Pegar código';
-                expimpTextarea.placeholder = expimpCurrentFormat === 'xml'
+                expimpTextarea.placeholder = expimpImportFormat === 'xml'
                     ? 'Pega aquí tu código XML...'
                     : 'Pega aquí tu código JSON...';
             }
@@ -1840,16 +2164,43 @@ document.addEventListener('DOMContentLoaded', () => {
         // Abre el modal en el modo indicado ('export' o 'import').
         // charData es opcional: si se abre desde la fila de un personaje concreto en la
         // tabla, se usa para generar la vista previa de export con sus datos reales.
-        function openExportImportModal(mode, charData) {
+        window.openExportImportModal = function (mode, charData) {
             if (!expimpModal) return;
-            expimpModal.dataset.mode = mode;
-            expimpCurrentCharData = charData || null;
-            expimpCurrentFormat = 'json';
 
-            // Resetear el toggle de formato a JSON por defecto cada vez que se abre
-            expimpFormatBtns.forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.format === 'json');
-            });
+            // Defensa en profundidad: si Config.ExportCharacters/ImportCharacters está en false,
+            // no se abre el modal aunque algo dispare esta función (los botones ya están ocultos
+            // por CSS, pero esto cubre cualquier otro punto de entrada, ej. la tabla de Opciones).
+            if (mode === 'export' && !exportCharactersEnabled) {
+                DebugPrint("Intento de abrir Exportar Personaje con Config.ExportCharacters = false. Bloqueado.");
+                return;
+            }
+            if (mode === 'import' && !importCharactersEnabled) {
+                DebugPrint("Intento de abrir Importar Personaje con Config.ImportCharacters = false. Bloqueado.");
+                return;
+            }
+
+            expimpModal.dataset.mode = mode; // Solo decide título/subtítulo/botón inferior
+            expimpCurrentCharData = charData || null;
+            expimpExportFormat = 'json';
+            expimpImportFormat = 'json';
+
+            // Resetear el estado visual: solo el botón JSON del bloque correspondiente al modo
+            // de apertura queda activo (nunca los dos a la vez, solo puede haber 1 de los 4).
+            const activeToggle = mode === 'export' ? expimpExportToggle : expimpImportToggle;
+            const otherToggle = mode === 'export' ? expimpImportToggle : expimpExportToggle;
+            if (activeToggle) {
+                activeToggle.querySelectorAll('.expimp-format-btn').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.format === 'json');
+                });
+            }
+            if (otherToggle) {
+                otherToggle.querySelectorAll('.expimp-format-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+            }
+
+            // El panel derecho arranca mostrando el bloque correspondiente al modo de apertura
+            expimpSharedOutput.dataset.activeScope = mode;
 
             if (mode === 'export') {
                 expimpIcon.className = 'fas fa-file-export modal-icon';
@@ -1866,35 +2217,57 @@ document.addEventListener('DOMContentLoaded', () => {
 
             refreshExpimpOutput();
             expimpModal.style.display = 'flex';
-            if (typeof Sounds !== 'undefined') Sounds.playSelect();
         }
 
         // Botón del sidebar: "Exportar Personaje" (sin personaje concreto asociado)
         const btnExportSidebar = document.getElementById('btn-export-char');
         if (btnExportSidebar) {
-            btnExportSidebar.addEventListener('click', () => openExportImportModal('export', lastCharacter));
+            btnExportSidebar.addEventListener('click', () => window.openExportImportModal('export', lastCharacter));
         }
 
         // Botón del sidebar: "Importar Personaje"
         const btnImportSidebar = document.getElementById('btn-import-char');
         if (btnImportSidebar) {
-            btnImportSidebar.addEventListener('click', () => openExportImportModal('import', null));
+            btnImportSidebar.addEventListener('click', () => window.openExportImportModal('import', null));
         }
 
-        // Toggle de formato JSON/XML
-        expimpFormatBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                expimpCurrentFormat = btn.dataset.format;
-                expimpFormatBtns.forEach(b => b.classList.toggle('active', b === btn));
-                refreshExpimpOutput();
-                if (typeof Sounds !== 'undefined') Sounds.playNav();
-            });
-        });
+        // Todos los botones de formato de AMBOS bloques juntos: se usa para que solo pueda
+        // haber 1 único botón ".active" entre los 4 en todo momento (no 1 por bloque).
+        const expimpAllFormatBtns = expimpModal ? expimpModal.querySelectorAll('.expimp-format-btn') : [];
 
-        // Botón de copiar el código generado (solo tiene sentido en modo Export)
+        // Toggle de formato del bloque EXPORTAR: al elegir uno, se desactivan los OTROS 3
+        // botones (los de su propio bloque Y los del bloque Importar), y marca el panel
+        // derecho como "export" (muestra el código generado).
+        if (expimpExportToggle) {
+            expimpExportToggle.querySelectorAll('.expimp-format-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    expimpExportFormat = btn.dataset.format;
+                    expimpAllFormatBtns.forEach(b => b.classList.toggle('active', b === btn));
+                    expimpSharedOutput.dataset.activeScope = 'export';
+                    refreshExpimpOutput();
+                });
+            });
+        }
+
+        // Toggle de formato del bloque IMPORTAR: al elegir uno, se desactivan los OTROS 3
+        // botones (los de su propio bloque Y los del bloque Exportar), y marca el panel
+        // derecho como "import" (muestra el textarea para pegar).
+        if (expimpImportToggle) {
+            expimpImportToggle.querySelectorAll('.expimp-format-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    expimpImportFormat = btn.dataset.format;
+                    expimpAllFormatBtns.forEach(b => b.classList.toggle('active', b === btn));
+                    expimpSharedOutput.dataset.activeScope = 'import';
+                    refreshExpimpOutput();
+                });
+            });
+        }
+
+        // Botón de copiar el código generado (solo tiene sentido cuando el panel muestra Export;
+        // el CSS ya lo oculta visualmente en modo import, esto es la fuente de verdad del dato)
         if (expimpCopyBtn) {
             expimpCopyBtn.addEventListener('click', () => {
-                const textToCopy = expimpModal.dataset.mode === 'export'
+                const textToCopy = expimpSharedOutput.dataset.activeScope === 'export'
                     ? expimpCodeContent.textContent
                     : expimpTextarea.value;
 
@@ -1907,7 +2280,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         expimpCopyBtn.classList.remove('copied');
                         expimpCopyBtn.innerHTML = '<i class="fas fa-copy"></i>';
                     }, 1200);
-                    if (typeof Sounds !== 'undefined') Sounds.playSelect();
                 }).catch(() => {
                     DebugPrint("No se pudo copiar al portapapeles.");
                 });
@@ -1920,7 +2292,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (expimpCancelBtn) {
                 expimpCancelBtn.addEventListener('click', () => {
                     expimpModal.style.display = 'none';
-                    if (typeof Sounds !== 'undefined') Sounds.playCancel();
                 });
             }
 
@@ -1938,10 +2309,60 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     DebugPrint("Confirmar importación en formato " + expimpCurrentFormat + " (demo, aún sin conectar a Lua).");
                 }
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
                 expimpModal.style.display = 'none';
             });
         }
+
+        // ==========================================
+        // 📜 HISTORIAL DE ACTIVIDAD DEL PERSONAJE
+        // ==========================================
+        window.openHistoryModal = function (charData) {
+            const modal = document.getElementById('modal-char-history');
+            if (!modal) return;
+
+            document.getElementById('history-subtitle').innerText = `${charData.charinfo.firstname} ${charData.charinfo.lastname} (${charData.citizenid})`;
+
+            // Formatear Tiempo Jugado
+            let rawPlaytime = (charData.metadata && charData.metadata.playtime) ? parseInt(charData.metadata.playtime) : 0;
+            if (isNaN(rawPlaytime)) rawPlaytime = 0;
+            let hours = Math.floor(rawPlaytime / 3600);
+            let mins = Math.floor((rawPlaytime % 3600) / 60);
+
+            // Formatear Fechas (Creación y Última vez)
+            let lastSeen = charData.last_updated ? formatDateTime(charData.last_updated) : "Desconocido";
+            // Si tu base de datos envía un created_at, o si lo guardas en metadata, lo lee aquí:
+            let createdAt = (charData.metadata && charData.metadata.created_at) ? formatDateTime(charData.metadata.created_at) : (charData.created_at ? formatDateTime(charData.created_at) : 'Desconocido');
+
+            document.getElementById('history-val-created').innerText = createdAt;
+            document.getElementById('history-val-playtime').innerText = `${hours}h ${mins}m`;
+            document.getElementById('history-val-lastseen').innerText = lastSeen;
+
+            // Renderizar Timeline (Log de Eventos)
+            const timeline = document.getElementById('history-timeline-list');
+            timeline.innerHTML = '';
+
+            // Si el servidor envía un array de eventos en metadata.activityLog, lo pintamos.
+            let logs = (charData.metadata && charData.metadata.activityLog) ? charData.metadata.activityLog : [];
+
+            if (logs.length === 0) {
+                timeline.innerHTML = '<div class="history-item-empty">No hay eventos recientes registrados para este personaje.</div>';
+            } else {
+                logs.forEach(log => {
+                    const icon = log.icon || 'fa-info';
+                    timeline.innerHTML += `
+                        <div class="history-item">
+                            <div class="history-item-icon"><i class="fas ${icon}"></i></div>
+                            <div class="history-item-content">
+                                <span class="history-item-date">${log.date || 'Desconocido'}</span>
+                                <span class="history-item-text">${log.text}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            modal.style.display = 'flex';
+        };
 
         // ==========================================
         // ♻️ RESTAURAR PERSONAJE (Papelera)
@@ -1965,7 +2386,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 listEl.style.display = 'none';
                 listEl.innerHTML = '';
 
-                if (typeof Sounds !== 'undefined') Sounds.playSelect();
 
                 axios.post(`https://${resName}/getDeletedCharacters`, JSON.stringify({}))
                     .catch(() => {
@@ -1976,18 +2396,245 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     })();
+
+    // ==========================================
+    // 🛒 TIENDA INICIAL (STARTER ITEMS)
+    // ==========================================
+
+    // Calcula el precio de un item con el +25% de recargo y redondea hacia arriba sin decimales.
+    function getModifiedPrice(basePrice) {
+        if (!basePrice || basePrice <= 0) return 0;
+        return Math.ceil(basePrice * 1.25);
+    }
+
+    function renderStarterItems() {
+        const grid = document.getElementById('starter-items-grid');
+        grid.innerHTML = '';
+        cartItems = {};
+        cartTotal = 0;
+
+        document.getElementById('starter-receipt-list').innerHTML = '<div class="receipt-empty">El carrito está vacío.</div>';
+        document.getElementById('starter-receipt-total').innerText = '$0';
+
+        startingItemsData.forEach(item => {
+            // Inicializamos la cantidad a su mínimo (o 0 si no tiene)
+            const minQty = item.min !== undefined ? item.min : 0;
+            cartItems[item.name] = minQty;
+
+            const finalPrice = getModifiedPrice(item.price);
+            const card = document.createElement('div');
+            card.className = 'starter-card';
+            const imageName = item.name.toLowerCase();
+
+            // Usamos item.label si existe, si no, fallback al name técnico
+            const displayName = item.label || item.name;
+
+            card.innerHTML = `
+                <div class="starter-img-box">
+                    <i class="fas fa-box-open starter-img-fallback" style="display: none;"></i>
+                    <img src="items/${imageName}.png" class="starter-img" alt="${displayName}" 
+                         onerror="this.style.display='none'; this.previousElementSibling.style.display='block';">
+                </div>
+                <div class="starter-item-name">${displayName}</div>
+                <div class="starter-controls">
+                    <button class="starter-qty-btn btn-minus" data-item="${item.name}"><i class="fas fa-minus"></i></button>
+                    <button class="starter-qty-btn btn-plus" data-item="${item.name}"><i class="fas fa-plus"></i></button>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+
+        // Actualizamos la UI inmediatamente para reflejar los mínimos obligatorios (Ej: id_card a 1)
+        updateStarterUI();
+
+        // Listeners para los botones + y -
+        document.querySelectorAll('.btn-minus').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const itemName = e.currentTarget.dataset.item;
+                const itemData = startingItemsData.find(i => i.name === itemName);
+                const minQty = itemData.min !== undefined ? itemData.min : 0;
+
+                if (cartItems[itemName] > minQty) {
+                    cartItems[itemName]--;
+                    updateStarterUI();
+                }
+            });
+        });
+
+        document.querySelectorAll('.btn-plus').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const itemName = e.currentTarget.dataset.item;
+                const itemData = startingItemsData.find(i => i.name === itemName);
+                const maxQty = itemData.max !== undefined ? itemData.max : 10;
+                const finalPrice = getModifiedPrice(itemData.price);
+
+                if (cartItems[itemName] < maxQty) {
+                    if ((cartTotal + finalPrice) <= startingBudget) {
+                        cartItems[itemName]++;
+                        updateStarterUI();
+                    } else {
+                        const budgetEl = document.getElementById('starter-budget');
+                        budgetEl.style.color = '#ff4747';
+                        setTimeout(() => budgetEl.style.color = '#ffffff', 300);
+                    }
+                }
+            });
+        });
+    }
+
+    function updateStarterUI() {
+        cartTotal = 0;
+        let totalItemsInCart = 0;
+        const receiptList = document.getElementById('starter-receipt-list');
+        receiptList.innerHTML = '';
+
+        startingItemsData.forEach(item => {
+            const qty = cartItems[item.name];
+            totalItemsInCart += qty;
+
+            const btnMinus = document.querySelector(`.starter-qty-btn.btn-minus[data-item="${item.name}"]`);
+            const btnPlus = document.querySelector(`.starter-qty-btn.btn-plus[data-item="${item.name}"]`);
+
+            const minQty = item.min !== undefined ? item.min : 0;
+            const maxQty = item.max !== undefined ? item.max : 10;
+            const finalPrice = getModifiedPrice(item.price);
+
+            if (btnMinus) btnMinus.disabled = qty <= minQty;
+            if (btnPlus) btnPlus.disabled = (qty >= maxQty) || ((cartTotal + finalPrice) > startingBudget);
+
+            // Rellenar el tíquet de compra a la derecha si hay más de 0
+            if (qty > 0) {
+                const lineTotal = qty * finalPrice;
+                const priceDisplay = finalPrice === 0 ? "GRATIS" : `$${lineTotal.toLocaleString()}`;
+                const displayName = item.label || item.name;
+
+                receiptList.innerHTML += `
+                    <div class="receipt-item">
+                        <div class="receipt-item-info">
+                            <span class="receipt-item-qty">${qty}x</span>
+                            <span class="receipt-item-name">${displayName}</span>
+                        </div>
+                        <span class="receipt-item-price">${priceDisplay}</span>
+                    </div>
+                `;
+            }
+
+            cartTotal += qty * finalPrice;
+        });
+
+        if (totalItemsInCart === 0) {
+            receiptList.innerHTML = '<div class="receipt-empty">El carrito está vacío.</div>';
+        }
+
+        document.getElementById('starter-receipt-total').innerText = `$${cartTotal.toLocaleString()}`;
+        updateStarterFooter(totalItemsInCart);
+    }
+
+    function updateStarterFooter(totalItems) {
+        document.getElementById('starter-budget').innerText = `$${startingBudget.toLocaleString()}`;
+        document.getElementById('starter-total').innerText = `$${cartTotal.toLocaleString()}`;
+
+        const purchaseBtn = document.getElementById('btn-starter-purchase');
+        // Si hay ALGÚN ítem en el carrito (aunque sea el DNI gratis), consideramos que es una "Compra"
+        if (totalItems > 0) {
+            purchaseBtn.innerText = Translate('ui_starter_purchase', 'CONFIRMAR');
+            purchaseBtn.classList.add('ready-to-buy');
+        } else {
+            purchaseBtn.innerText = Translate('ui_starter_skip', 'OMITIR');
+            purchaseBtn.classList.remove('ready-to-buy');
+        }
+
+
+
+        // Botón VOLVER desde la tienda de ítems de vuelta al formulario de registro
+        const btnStarterBack = document.getElementById('btn-starter-back');
+        if (btnStarterBack) {
+            btnStarterBack.addEventListener('click', () => {
+                DebugPrint("Volviendo al formulario de creación de personaje manteniendo los datos.");
+
+                // Volvemos a mostrar la pantalla de registro
+                showScreen('character-register');
+            });
+        }
+    }
+
+    // Acción del botón inferior de la Tienda (Purchase / Skip)
+    document.getElementById('btn-starter-purchase').addEventListener('click', () => {
+        let totalItemsInCart = 0;
+        for (const qty of Object.values(cartItems)) {
+            totalItemsInCart += qty;
+        }
+
+        if (totalItemsInCart > 0) {
+            const summaryList = document.getElementById('starter-summary-list');
+            summaryList.innerHTML = '';
+
+            startingItemsData.forEach(item => {
+                const qty = cartItems[item.name];
+                if (qty > 0) {
+                    const price = getModifiedPrice(item.price);
+                    const lineTotal = price * qty;
+                    const priceDisplay = price === 0 ? "GRATIS" : `$${lineTotal.toLocaleString()}`;
+                    const imageName = item.name.toLowerCase();
+                    const displayName = item.label || item.name;
+
+                    summaryList.innerHTML += `
+                        <div class="starter-summary-item">
+                            <span class="starter-summary-item-name">
+                                <img src="items/${imageName}.png" onerror="this.style.display='none';">
+                                ${qty}x ${displayName}
+                            </span>
+                            <span>${priceDisplay}</span>
+                        </div>
+                    `;
+                }
+            });
+            document.getElementById('starter-summary-price').innerText = `$${cartTotal.toLocaleString()}`;
+            document.getElementById('modal-starter-confirm').style.display = 'flex';
+        } else {
+            submitFinalCharacterCreation(null);
+        }
+    });
 });
 
 // ===============================================
 // === FUNCIONES DE APOYO (RUTEO DE PANTALLAS) ===
 // ===============================================
 // Función maestra para cambiar entre las secciones de la UI de forma limpia
+// Limpia el estado visual de la pantalla "Personajes" (panel de detalle, botonera de
+// acción, título superior y visibilidad de los slots) dejándolo exactamente como al
+// primer arranque de la UI: nada seleccionado. Sin esto, si la UI se cierra y se vuelve
+// a abrir sin recargar la página (p.ej. tras /logout), el panel seguía mostrando los
+// datos y botones ("JUGAR"/"DETALLES") del último personaje seleccionado en la sesión
+// anterior, aunque el jugador todavía no hubiera hecho clic en ningún slot.
+function resetCharacterListState() {
+    selectedSlot = null;
+    isZoomed = false;
+
+    const actionButtons = document.getElementById('action-buttons');
+    if (actionButtons) actionButtons.style.display = "none";
+
+    const panel = document.getElementById('detailed-char-info');
+    if (panel) panel.classList.add('hidden');
+
+    const topTitle = document.querySelector('.top-title');
+    if (topTitle) topTitle.classList.remove('hidden');
+
+    const slotsWrapper = document.getElementById('slots-wrapper');
+    if (slotsWrapper) slotsWrapper.classList.remove('slots-hidden');
+
+    document.querySelectorAll('.char-slot').forEach(el => el.classList.remove('active'));
+
+    setFooterZoomState(false);
+}
+
 function showScreen(screenId) {
     DebugPrint("Cambiando pantalla a: " + screenId);
     document.getElementById('landing-screen').style.display = "none";
     document.getElementById('character-list').style.display = "none";
     document.getElementById('character-register').style.display = "none";
     document.getElementById('options-screen').style.display = "none";
+    document.getElementById('starter-items-screen').style.display = "none";
 
     document.getElementById(screenId).style.display = screenId === "landing-screen" ? "flex" : "block";
 
@@ -1998,6 +2645,10 @@ function showScreen(screenId) {
         // Asegurar que el fondo de opciones tenga la clase show
         const bgOpt = document.getElementById('bg-options');
         if (bgOpt) bgOpt.classList.add('show');
+    } else if (screenId === "character-list") {
+        // Siempre que se entra a "Personajes" arrancamos sin ningún slot seleccionado,
+        // para no arrastrar el panel/botonera del último personaje de una sesión anterior.
+        resetCharacterListState();
     }
 }
 
@@ -2075,7 +2726,6 @@ function selectSlot(slotId, animateDirection = 0) {
         applyContent();
     }
 
-    if (typeof Sounds !== 'undefined') Sounds.playNav();
 }
 
 let navQueue = [];
@@ -2335,18 +2985,31 @@ function renderRestoreList(characters) {
         `;
         listContainer.appendChild(row);
 
-        row.querySelector('.btn-restore-row').addEventListener('click', () => {
+        row.querySelector('.btn-restore-row').addEventListener('click', (e) => {
             const citizenid = char.citizenid;
             DebugPrint("Solicitando restaurar personaje CitizenID: " + citizenid);
+            setButtonLoading(e.currentTarget, true);
+
             axios.post(`https://${resName}/restoreCharacter`, JSON.stringify({ citizenid }))
-                .catch(() => DebugPrint("Error al solicitar la restauración del personaje."));
-            if (typeof Sounds !== 'undefined') Sounds.playSelect();
-            // Cerramos el modal; la lista de personajes se refrescará sola cuando
-            // el servidor confirme (llega por el mismo aviso que usa reorderDone).
-            const modal = document.getElementById('modal-restore-char');
-            if (modal) modal.style.display = 'none';
+                .catch(() => DebugPrint("Error al solicitar la restauración del personaje."))
+                .finally(() => {
+                    setButtonLoading(e.currentTarget, false);
+                    const modal = document.getElementById('modal-restore-char');
+                    if (modal) modal.style.display = 'none';
+                });
         });
     });
+}
+
+// Aplica (u oculta) la visibilidad de todo lo relacionado con Exportar/Importar Personaje,
+// según Config.ExportCharacters / Config.ImportCharacters enviados desde Lua. Se usan clases
+// en <body> en vez de ocultar elementos uno a uno, porque el botón de exportar de cada fila
+// se regenera dinámicamente cada vez que la tabla de Opciones se vuelve a renderizar (el CSS
+// ligado a estas clases se encarga de ocultarlo también en las filas futuras automáticamente).
+function applyExportImportVisibility() {
+    document.body.classList.toggle('export-chars-disabled', !exportCharactersEnabled);
+    document.body.classList.toggle('import-chars-disabled', !importCharactersEnabled);
+    DebugPrint("Visibilidad Exportar/Importar aplicada. Exportar: " + exportCharactersEnabled + ", Importar: " + importCharactersEnabled);
 }
 
 // Construye e inyecta los contenedores (slots) HTML para cada ranura de personaje permitida

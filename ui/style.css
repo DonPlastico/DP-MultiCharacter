@@ -27,6 +27,23 @@ body {
     background: transparent;
 }
 
+/* Ocultar botón "Exportar Personaje" del sidebar y el de cada fila de la tabla */
+body.export-chars-disabled #btn-export-char,
+body.export-chars-disabled .btn-export-char {
+    display: none !important;
+}
+
+/* Ocultar botón "Importar Personaje" del sidebar */
+body.import-chars-disabled #btn-import-char {
+    display: none !important;
+}
+
+/* Si AMBOS están desactivados, el modal combinado no tiene sentido ni siquiera
+   como punto de entrada residual (defensa extra, aunque ya está bloqueado en JS) */
+body.export-chars-disabled.import-chars-disabled #modal-export-import {
+    display: none !important;
+}
+
 /* === CONTENEDOR PRINCIPAL === */
 #app {
     width: 100%;
@@ -697,6 +714,11 @@ button {
     border-color: var(--accent);
 }
 
+/* Selector de fecha de nacimiento: cursor de puntero en todo el campo */
+#reg-dob {
+    cursor: pointer;
+}
+
 input[type="date"]::-webkit-calendar-picker-indicator {
     filter: invert(1);
     cursor: pointer;
@@ -920,6 +942,16 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     animation: fadeInOverlay 0.3s ease;
 }
 
+/* Modal de alertas: siempre por encima del resto de modales */
+#modal-alert {
+    z-index: 9999;
+}
+
+/* Contenido del modal de alertas: un poco más estrecho que el estándar */
+#modal-alert .modal-content {
+    min-width: 350px;
+}
+
 .modal-content {
     background: linear-gradient(135deg, rgba(20, 20, 20, 0.9), rgba(5, 5, 5, 0.95));
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1082,32 +1114,92 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* Variante ancha del modal base, para dar espacio a las dos columnas */
 .modal-content-wide {
-    width: 720px;
+    width: 760px;
     max-width: 92vw;
 }
 
-.expimp-panel {
+/* Fila principal: izquierda (bloques de formato) + derecha (panel único compartido) */
+.expimp-layout {
     display: flex;
     gap: 20px;
     text-align: left;
     width: 100%;
-    min-height: 280px;
+    align-items: stretch;
 }
 
-/* --- Columna izquierda: selector de formato --- */
+/* --- Columna izquierda: apila los 2 bloques (Exportar arriba, Importar abajo) --- */
 .expimp-col-left {
-    flex: 0 0 160px;
+    flex: 0 0 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.expimp-block {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+}
+
+.expimp-block-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.expimp-block-header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: #ffffff;
+    font-size: 12px;
+}
+
+.expimp-block-header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    line-height: 1.2;
+}
+
+.expimp-block-header-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.expimp-block-header-sub {
+    font-size: 10px;
+    font-weight: 600;
+    color: #888888;
+    text-transform: none;
+    letter-spacing: 0.2px;
+}
+
+.expimp-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 2px 0;
 }
 
 .expimp-col-label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 1px;
-    color: #999999;
+    color: #777777;
 }
 
 /* Toggle tipo pestañas, apiladas en vertical (una encima de otra) */
@@ -1126,7 +1218,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 12px 10px;
+    padding: 10px 10px;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 4px;
@@ -1154,7 +1246,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     box-shadow: 0 0 15px rgba(255, 255, 255, 0.25);
 }
 
-/* --- Columna derecha: código generado (export) o textarea (import) --- */
+/* --- Columna derecha: panel ÚNICO compartido (código generado o textarea) --- */
 .expimp-col-right {
     flex: 1;
     display: flex;
@@ -1197,9 +1289,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     border-color: #ffffff;
 }
 
+/* El botón de copiar solo tiene sentido en modo Exportar; se oculta en Importar */
+.expimp-col-right[data-active-scope="import"] .expimp-copy-btn {
+    display: none;
+}
+
 /* Bloque de código de solo lectura (modo Export) */
 .expimp-output-code {
     flex: 1;
+    min-height: 260px;
     margin: 0;
     padding: 14px;
     background: rgba(0, 0, 0, 0.4);
@@ -1222,6 +1320,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 /* Textarea para pegar código (modo Import) */
 .expimp-output-textarea {
     flex: 1;
+    min-height: 260px;
     width: 100%;
     padding: 14px;
     background: rgba(0, 0, 0, 0.4);
@@ -1233,6 +1332,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     line-height: 1.6;
     resize: none;
     outline: none;
+    box-sizing: border-box;
     transition: border-color 0.2s ease;
 }
 
@@ -1245,8 +1345,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 /* En pantallas estrechas, apilar las columnas en vertical */
-@media (max-width: 640px) {
-    .expimp-panel {
+@media (max-width: 640px) {    .expimp-layout {
         flex-direction: column;
     }
 
@@ -1256,6 +1355,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
     .expimp-format-toggle {
         flex-direction: row;
+    }
+
+    .expimp-output-code,
+    .expimp-output-textarea {
+        min-height: 180px;
     }
 }
 
@@ -1274,6 +1378,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     color: #999999;
     font-size: 13px;
     text-align: center;
+}
+
+/* Botón de cierre a ancho completo dentro del modal */
+#modal-restore-char .btn-modal-cancel {
+    width: 100%;
 }
 
 .restore-state-msg i {
@@ -1602,15 +1711,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 /* Animación de entrada del modal */
-.hl-modal-body > * {
+.hl-modal-body>* {
     animation: hlFadeIn 0.4s ease backwards;
 }
 
-.hl-modal-body > *:nth-child(2) {
+.hl-modal-body>*:nth-child(2) {
     animation-delay: 0.08s;
 }
 
-.hl-modal-body > *:nth-child(3) {
+.hl-modal-body>*:nth-child(3) {
     animation-delay: 0.16s;
 }
 
@@ -1655,12 +1764,26 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 .snd-bar {
     width: 5px;
-    height: var(--bar-h);
+    height: var(--bar-h, 50%);
     min-height: 4px;
     background: rgba(255, 255, 255, 0.12);
     border-radius: 1px;
     transition: background 0.3s ease, box-shadow 0.3s ease;
 }
+
+/* Alturas por defecto del preview (sin estilos inline) */
+.snd-preview-bars .snd-bar:nth-child(1) { --bar-h: 30%; }
+.snd-preview-bars .snd-bar:nth-child(2) { --bar-h: 55%; }
+.snd-preview-bars .snd-bar:nth-child(3) { --bar-h: 40%; }
+.snd-preview-bars .snd-bar:nth-child(4) { --bar-h: 70%; }
+.snd-preview-bars .snd-bar:nth-child(5) { --bar-h: 50%; }
+.snd-preview-bars .snd-bar:nth-child(6) { --bar-h: 90%; }
+.snd-preview-bars .snd-bar:nth-child(7) { --bar-h: 60%; }
+.snd-preview-bars .snd-bar:nth-child(8) { --bar-h: 80%; }
+.snd-preview-bars .snd-bar:nth-child(9) { --bar-h: 45%; }
+.snd-preview-bars .snd-bar:nth-child(10) { --bar-h: 65%; }
+.snd-preview-bars .snd-bar:nth-child(11) { --bar-h: 85%; }
+.snd-preview-bars .snd-bar:nth-child(12) { --bar-h: 55%; }
 
 .snd-preview-bars.play .snd-bar {
     background: #ffffff;
@@ -1823,7 +1946,156 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     }
 }
 
-/* === REFLEJO INFERIOR: REPLICA EXACTA EXPANDIDA HASTA EL FONDO === */
+/* ==========================================================================
+   MODAL DISCORD / AYUDA — CONFIGURABLE (WEB Y/O DISCORD)
+   ========================================================================== */
+.discord-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    text-align: left;
+    overflow-y: hidden !important;
+}
+
+/* Bloque de URL (Web o Discord) */
+.discord-url-block {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 14px;
+    animation: discordBlockIn 0.35s ease backwards;
+}
+
+.discord-url-block:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+.discord-url-block:nth-child(2) {
+    animation-delay: 0.10s;
+}
+
+@keyframes discordBlockIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.discord-url-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 10px;
+}
+
+.discord-url-header i {
+    font-size: 12px;
+}
+
+.discord-url-header .fa-globe {
+    color: #00d4ff;
+}
+
+.discord-url-header .fa-discord {
+    color: #5865F2;
+}
+
+.discord-url-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.discord-url-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+}
+
+/* Botón copiar */
+.discord-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.discord-copy-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+.discord-copy-btn.copied {
+    background: #ffffff;
+    color: #000000;
+    border-color: #ffffff;
+}
+
+.discord-copy-btn.copied i {
+    color: #000000;
+}
+
+/* Mensaje vacío */
+.discord-empty-msg {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 11px;
+    text-align: center;
+}
+
+.discord-empty-msg i {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.2);
+}
+
+/* Botón cerrar al 100% */
+#btn-discord-close {
+    justify-content: center;
+    width: 100%;
+}
+
+/* Botón cerrar del historial a ancho completo */
+#modal-char-history .btn-modal-cancel {
+    width: 100%;
+}
+
 .landing-reflection-container {
     position: absolute;
     bottom: 10px;
@@ -2158,6 +2430,11 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     font-weight: 700;
 }
 
+/* Icono del título del panel: separación respecto al texto */
+.panel-header .panel-title i {
+    margin-right: 8px;
+}
+
 .panel-header .panel-status {
     font-size: 10px;
     color: #aaaaaa;
@@ -2189,10 +2466,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+/* Último grupo (Actividad): sin borde ni márgenes extra */
 .info-group:last-child {
     border-bottom: none;
     margin-bottom: 0;
     padding-bottom: 0;
+}
+
+.info-group:last-child .info-row:last-child {
+    margin-bottom: 0;
 }
 
 .info-title {
@@ -2947,6 +3229,12 @@ sidebar-block:nth-child(1) {
     padding-right: 6px;
 }
 
+/* Cabecera de la columna de arrastre: icono centrado como en las filas */
+.characters-table thead th.col-drag {
+    padding-left: 27px;
+    font-size: small;
+}
+
 .characters-table .col-slot {
     width: 90px;
 }
@@ -3595,6 +3883,664 @@ span.flatpickr-weekday {
     pointer-events: none !important;
     position: absolute !important;
 }
+
+/* Ajuste de espacio para el tercer botón en la tabla */
+.characters-table .col-actions {
+    width: 160px;
+}
+
+/* ==========================================================================
+   MODAL HISTORIAL DE ACTIVIDAD
+   ========================================================================== */
+.history-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    text-align: left;
+}
+
+.history-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.history-stat-box {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.history-stat-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+
+.history-stat-value {
+    font-size: 14px;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.history-section-title {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 6px;
+}
+
+.history-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 550px;
+    overflow-y: auto;
+    padding-right: 5px;
+}
+
+.history-timeline::-webkit-scrollbar {
+    width: 3px;
+}
+
+.history-timeline::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.history-timeline::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.history-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.history-item-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.history-item-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.history-item-date {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.35);
+    font-family: 'Consolas', monospace;
+}
+
+.history-item-text {
+    font-size: 12px;
+    color: #cccccc;
+    line-height: 1.4;
+}
+
+.history-item-empty {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.3);
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px dashed rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+}
+
+/* ==========================================================================
+   PANTALLA DE STARTING ITEMS (TIENDA INICIAL REDISEÑO)
+   ========================================================================== */
+#starter-items-screen {
+    z-index: 70;
+    background: #0a0a0a;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+#bg-starter {
+    background: radial-gradient(ellipse at 50% 50%, rgba(20, 20, 20, 0.9) 0%, rgba(8, 8, 8, 1) 100%);
+    opacity: 1;
+}
+
+.starter-wrapper {
+    width: 100%;
+    height: 100%;
+    padding: 60px;
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+    animation: optionsFadeIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    z-index: 2;
+}
+
+.starter-header {
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 20px;
+}
+
+.starter-header h2 {
+    font-size: 32px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    text-shadow: 0 2px 20px rgba(0, 0, 0, 0.9);
+}
+
+.starter-header p {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-top: 6px;
+    letter-spacing: 0.5px;
+}
+
+.starter-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.starter-content-layout {
+    display: flex;
+    gap: 30px;
+    flex: 1;
+    min-height: 0;
+}
+
+.starter-grid-container {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 15px;
+}
+
+.starter-grid-container::-webkit-scrollbar {
+    width: 3px;
+}
+
+.starter-grid-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.starter-grid-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+/* Grid de Tarjetas (Cuadraditos) */
+.starter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 15px;
+    padding: 5px;
+    align-content: start;
+}
+
+/* ==========================================================================
+   TÍQUET DE COMPRA (CARRITO LATERAL)
+   ========================================================================== */
+.starter-receipt-container {
+    width: 320px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.starter-receipt {
+    background: rgba(17, 17, 17, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    backdrop-filter: blur(10px);
+}
+
+.receipt-header {
+    padding: 16px 20px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: 2px;
+}
+
+.receipt-header i {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 16px;
+}
+
+.receipt-body {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.receipt-body::-webkit-scrollbar {
+    width: 3px;
+}
+
+.receipt-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.receipt-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.receipt-empty {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.3);
+    text-align: center;
+    margin-top: 30px;
+    font-style: italic;
+}
+
+.receipt-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: #cccccc;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.receipt-item-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.receipt-item-qty {
+    font-weight: 900;
+    color: #000000;
+    background: #ffffff;
+    padding: 3px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+}
+
+.receipt-item-name {
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.receipt-item-price {
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.receipt-footer {
+    padding: 16px 20px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 16px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 1px;
+}
+
+/* Grid de Tarjetas (Cuadraditos) */
+.starter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 20px;
+    align-content: start;
+}
+
+.starter-card {
+    background: rgba(17, 17, 17, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.starter-card:hover {
+    background: rgba(25, 25, 25, 0.9);
+    border-color: rgba(255, 255, 255, 0.15);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.starter-price {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: #ffffff;
+    color: #000000;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+    z-index: 2;
+}
+
+.starter-item-name {
+    margin-top: auto;
+    font-size: 11px;
+    font-weight: 700;
+    color: #aaaaaa;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+/* Área de imagen / Fallback */
+.starter-img-box {
+    width: 100%;
+    height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 20px 0 10px 0;
+    position: relative;
+}
+
+.starter-img {
+    max-width: 80px;
+    max-height: 80px;
+    object-fit: contain;
+    filter: drop-shadow(0 5px 15px rgba(0, 0, 0, 0.4));
+    transition: transform 0.3s ease;
+    z-index: 1;
+}
+
+.starter-card:hover .starter-img {
+    transform: scale(1.15);
+}
+
+.starter-img-fallback {
+    font-size: 40px;
+    color: rgba(255, 255, 255, 0.05);
+    transition: color 0.3s ease;
+}
+
+.starter-card:hover .starter-img-fallback {
+    color: rgba(255, 255, 255, 0.15);
+}
+
+/* Controles de cantidad minimalistas */
+.starter-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    padding: 2px;
+}
+
+.starter-qty-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+    font-size: 11px;
+}
+
+.starter-qty-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+.starter-qty-btn:disabled {
+    opacity: 0.2;
+    cursor: not-allowed;
+}
+
+.starter-qty-val {
+    font-size: 13px;
+    font-weight: 800;
+    color: #ffffff;
+    min-width: 24px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Footer (Presupuesto y Total) */
+.starter-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.starter-footer-info {
+    display: flex;
+    gap: 60px;
+}
+
+.starter-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.starter-stat-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+
+.starter-stat-value {
+    font-size: 28px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 1px;
+    font-variant-numeric: tabular-nums;
+}
+
+.starter-purchase-btn {
+    min-width: 160px;
+    padding: 12px 25px;
+    font-size: 12px;
+    letter-spacing: 2px;
+}
+
+/* Estado cuando cambia a "COMPRAR" */
+.starter-purchase-btn.ready-to-buy {
+    background: #ffffff;
+    color: #000000;
+    border-color: #ffffff;
+}
+
+.starter-purchase-btn.ready-to-buy:hover {
+    background: #d4d4d4;
+    border-color: #d4d4d4;
+    box-shadow: 0 5px 25px rgba(255, 255, 255, 0.2);
+}
+
+/* === MODAL CONFIRMACIÓN COMPRA === */
+.starter-summary-box {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    /* Mantiene los bordes redondeados al hacer scroll */
+    max-width: 100%;
+}
+
+.starter-summary-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 220px;
+    /* Aquí limitamos la altura para que haga scroll */
+    overflow-y: auto;
+    padding: 18px 18px 10px 18px;
+}
+
+/* Custom Scrollbar para la lista de compra */
+.starter-summary-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.starter-summary-list::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.starter-summary-list::-webkit-scrollbar-thumb {
+    background: #cccccc;
+    border-radius: 4px;
+}
+
+.starter-summary-list::-webkit-scrollbar-thumb:hover {
+    background: #ffffff;
+}
+
+.starter-summary-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: #cccccc;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+    padding-bottom: 10px;
+}
+
+.starter-summary-item-name {
+    font-weight: 700;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.starter-summary-item-name img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+/* Total anclado abajo */
+.starter-summary-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 16px;
+    font-weight: 900;
+    color: #ffffff;
+    background: rgba(10, 10, 10, 0.95);
+    /* Fondo diferenciado */
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 15px 18px;
+    flex-shrink: 0;
+    /* Impide que el scroll lo encoja */
+}
+
+.starter-footer-actions {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.starter-back-btn {
+    padding: 12px 25px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    background: transparent;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.starter-back-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -91,3 +91,73 @@ const Sounds = (() => {
         }
     };
 })();
+
+// ==========================================
+// 🖱️ LISTENER GLOBAL DELEGADO (cubre TODO lo clicable automáticamente)
+// ==========================================
+// En vez de llamar a Sounds.playX() manualmente en cada botón (frágil: cualquier
+// botón nuevo se queda mudo si alguien se olvida de añadir la llamada), delegamos
+// en document.body un único listener de 'mouseover' (nav) y 'click' (select/cancel)
+// que cubre CUALQUIER elemento clicable presente o que se añada dinámicamente más
+// adelante (filas de tabla regeneradas, modales nuevos, etc.), sin mantenimiento.
+document.addEventListener('DOMContentLoaded', () => {
+    // Selector de "cualquier cosa que se pueda pulsar" en esta UI. Se amplía aquí
+    // si en el futuro se añade un nuevo tipo de elemento clicable con otra clase.
+    const CLICKABLE_SELECTOR = [
+        'button',
+        'a',
+        '.char-slot',
+        '.gender-btn',
+        '.landing-image-card',
+        '.land-btn',
+        '.sidebar-item',
+        '.expimp-format-btn',
+        '.table-btn',
+        '.grid-switch',
+        '[role="switch"]',
+        '[role="button"]',
+        '.dropdown-option',
+        '.gs-thumb',
+        'input[type="range"]',
+        'input[type="radio"]',
+        'input[type="checkbox"]'
+    ].join(', ');
+
+    // Clases/IDs que se consideran "acción destructiva o de cancelación" (suenan distinto)
+    const CANCEL_SELECTOR = [
+        '.btn-danger',
+        '.btn-modal-cancel',
+        '#btn-cancel-reg',
+        '.btn-delete-char',
+        '.btn-restore-cancel'
+    ].join(', ');
+
+    // El hover (mouseover) burbujea con CADA hijo que el cursor cruza dentro del propio
+    // botón (p.ej. el icono "+" de un slot vacío, o los <span> de título/subtítulo de un
+    // .sidebar-item). Sin control, eso dispara un segundo "ping" cada vez que el cursor
+    // pasa de un hijo a otro DENTRO del mismo elemento clicable. Para evitarlo, comparamos
+    // de dónde viene el cursor (e.relatedTarget): si ya estaba dentro del mismo contenedor
+    // clicable, es un movimiento interno y no debe volver a sonar; solo suena al entrar
+    // al contenedor por primera vez desde fuera.
+    document.body.addEventListener('mouseover', (e) => {
+        const target = e.target.closest(CLICKABLE_SELECTOR);
+        if (!target || typeof Sounds === 'undefined') return;
+
+        // ¿El cursor ya estaba dentro de ESTE MISMO contenedor clicable? Si es así, es un
+        // movimiento interno entre hijos (texto, icono, etc.) y no debe volver a sonar.
+        if (e.relatedTarget && target.contains(e.relatedTarget)) return;
+
+        Sounds.playNav();
+    });
+
+    document.body.addEventListener('click', (e) => {
+        const target = e.target.closest(CLICKABLE_SELECTOR);
+        if (!target || typeof Sounds === 'undefined') return;
+
+        if (target.closest(CANCEL_SELECTOR)) {
+            Sounds.playCancel();
+        } else {
+            Sounds.playSelect();
+        }
+    });
+});

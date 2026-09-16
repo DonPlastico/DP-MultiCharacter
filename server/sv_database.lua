@@ -32,12 +32,34 @@ end)
 -- ==========================================
 -- 🗄️ CONSULTAS Y GESTIÓN DE BASE DE DATOS
 -- ==========================================
+
+-- ⚡ SISTEMA DE CACHÉ EN MEMORIA
+local CharCache = {}
+local CACHE_DURATION = 15 -- Segundos que durará la caché antes de caducar
+
+-- Función global para invalidar (borrar) la caché cuando haya cambios
+function InvalidateCharacterCache(license)
+    if license and CharCache[license] then
+        CharCache[license] = nil
+        DebugPrint("Caché invalidada y limpiada para la licencia: " .. tostring(license))
+    end
+end
+
 -- Callback para solicitar la información de todos los personajes del jugador al abrir el menú
 QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', function(source, cb)
     local license = QBCore.Functions.GetIdentifier(source, 'license')
     DebugPrint("Solicitando personajes para la licencia: " .. tostring(license))
+
+    -- 1. COMPROBACIÓN DE CACHÉ
+    if CharCache[license] and CharCache[license].expires > os.time() then
+        DebugPrint("⚡ Sirviendo personajes desde CACHÉ (Ahorrando consulta SQL pesada).")
+        local cached = CharCache[license].data
+        cb(cached.plyChars, cached.maxSlots, cached.lastCharacter, cached.trashedCount)
+        return
+    end
+
     local plyChars = {}
-    local trashedCount = 0 -- Nº de personajes en PROCESO_ELIMINACION (papelera): ocupan slot pero no se listan
+    local trashedCount = 0
 
     -- Determinamos la cantidad de slots permitidos
     local maxSlots = Config.DefaultSlots
@@ -49,23 +71,19 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', func
     local configuredSlots = tonumber(maxSlots) or MIN_SLOTS
     maxSlots = math.max(MIN_SLOTS, math.min(MAX_SLOTS, math.floor(configuredSlots)))
     if configuredSlots ~= maxSlots then
-        DebugPrint("Slots fuera de rango (" .. tostring(configuredSlots) .. "). Se ha aplicado el límite " ..
-                       tostring(maxSlots) .. " (mínimo " .. tostring(MIN_SLOTS) .. ", máximo " .. tostring(MAX_SLOTS) ..
-                       ").")
+        DebugPrint("Slots fuera de rango. Se aplicó límite " .. tostring(maxSlots))
     end
 
-    -- Consulta a la base de datos para obtener personajes y sus skins activas
+    -- Consulta a la base de datos (Solo se ejecuta si la caché no existe o caducó)
     MySQL.query(
         'SELECT p.*, s.model, s.skin FROM players p LEFT JOIN playerskins s ON p.citizenid = s.citizenid AND s.active = 1 WHERE p.license = ? ORDER BY p.cid ASC',
         {license}, function(result)
             DebugPrint("Consulta SQL completada. Personajes encontrados: " .. tostring(#result))
             for i = 1, (#result), 1 do
-                -- Decodificamos la información que viene en formato JSON desde la base de datos
                 result[i].charinfo = json.decode(result[i].charinfo)
                 result[i].money = json.decode(result[i].money)
                 result[i].job = json.decode(result[i].job)
 
-                -- Añadimos la lectura del Metadata y Gang
                 if result[i].gang then
                     result[i].gang = json.decode(result[i].gang)
                 end
@@ -73,25 +91,28 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', func
                     result[i].metadata = json.decode(result[i].metadata)
                 end
 
-                -- LIMPIEZA AUTOMÁTICA de personajes marcados como borrados (soft delete antiguo):
-                -- antes quedaban en la BD aunque no se mostraran. Ahora los borramos de verdad.
                 if result[i].metadata and result[i].metadata.deleted then
-                    DebugPrint("Eliminando físicamente personaje previamente marcado como borrado (CitizenID: " ..
-                                   tostring(result[i].citizenid) .. ")")
                     MySQL.query.await('DELETE FROM `players` WHERE citizenid = ?', {result[i].citizenid})
                 elseif result[i].metadata and result[i].metadata.PROCESO_ELIMINACION then
-                    -- Personaje en la "papelera" (ver Restaurar Personaje): NO se muestra en la
-                    -- lista normal de personajes, pero su slot sigue contando como ocupado, así
-                    -- que se guarda aparte para restarlo de los slots libres sin pintarlo en la UI.
-                    DebugPrint("Personaje en PROCESO_ELIMINACION omitido de la lista (CitizenID: " ..
-                                   tostring(result[i].citizenid) .. "), pero su slot sigue bloqueado.")
                     trashedCount = trashedCount + 1
                 else
                     plyChars[#plyChars + 1] = result[i]
                 end
             end
 
-            DebugPrint("Enviando datos procesados de los personajes al cliente. En papelera: " .. tostring(trashedCount))
+            DebugPrint("Enviando datos. En papelera: " .. tostring(trashedCount))
+
+            -- 2. GUARDAR EN CACHÉ LOS DATOS PROCESADOS
+            CharCache[license] = {
+                expires = os.time() + CACHE_DURATION,
+                data = {
+                    plyChars = plyChars,
+                    maxSlots = maxSlots,
+                    lastCharacter = plyChars[1],
+                    trashedCount = trashedCount
+                }
+            }
+
             cb(plyChars, maxSlots, plyChars[1], trashedCount)
         end)
 end)
@@ -202,6 +223,14 @@ end
 -- vía el hilo de purga automática definido más abajo.
 QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', function(source, cb, citizenid)
     local src = source
+
+    if not CheckRateLimit(src, 'delete') then
+        TriggerClientEvent('QBCore:Notify', src, "Por favor, espera unos segundos antes de borrar otro personaje.",
+            "error")
+        cb(false)
+        return
+    end
+
     DebugPrint("Solicitud de eliminación (a papelera) de personaje recibida. CitizenID: " .. tostring(citizenid))
 
     if not Config.EnableDeleteButton then
@@ -240,8 +269,12 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:deleteCharacter', func
     metadata.PROCESO_ELIMINACION = os.time() -- Timestamp UNIX del momento del borrado
 
     local updOk, updErr = pcall(function()
-        MySQL.update.await('UPDATE players SET metadata = ? WHERE citizenid = ?', {json.encode(metadata), citizenid})
+        -- ¡AQUÍ ESTÁ LA MAGIA! Ponemos cid = NULL para liberar el slot real en la base de datos
+        MySQL.update.await('UPDATE players SET metadata = ?, cid = NULL WHERE citizenid = ?',
+            {json.encode(metadata), citizenid})
     end)
+
+    InvalidateCharacterCache(license)
 
     if not updOk then
         DebugPrint("  ⚠ ERROR marcando el personaje como PROCESO_ELIMINACION: " .. tostring(updErr))
@@ -311,8 +344,7 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:getDeletedCharacters',
     cb(deletedChars)
 end)
 
--- Evento: restaura un personaje desde la papelera (quita la marca PROCESO_ELIMINACION),
--- siempre que siga dentro del plazo y pertenezca al jugador que lo solicita.
+-- Evento: restaura un personaje desde la papelera (le busca un hueco libre y quita la marca)
 RegisterNetEvent('DP-MultiCharacter:server:restoreCharacter', function(citizenid)
     local src = source
     DebugPrint("Solicitud de restauración de personaje recibida. CitizenID: " .. tostring(citizenid))
@@ -326,33 +358,67 @@ RegisterNetEvent('DP-MultiCharacter:server:restoreCharacter', function(citizenid
     local ownerRow = row and row[1]
 
     if not ownerRow or ownerRow.license ~= license then
-        DebugPrint("ERROR: Intento de restaurar un personaje que no pertenece a este jugador.")
         TriggerClientEvent('QBCore:Notify', src, "No se pudo restaurar el personaje", "error")
         return
     end
 
     local ok, metadata = pcall(json.decode, ownerRow.metadata)
     if not ok or type(metadata) ~= 'table' or not metadata.PROCESO_ELIMINACION then
-        DebugPrint("ERROR: El personaje no está en la papelera.")
         TriggerClientEvent('QBCore:Notify', src, "Este personaje no está en la papelera", "error")
         return
     end
 
-    -- Comprobamos que siga dentro del plazo (por si el hilo de purga no ha pasado todavía
-    -- pero el plazo ya venció técnicamente)
+    -- Comprobamos que siga dentro del plazo
     local windowSeconds = (Config.RestoreWindowDays or 5) * 86400
     local elapsed = os.time() - (tonumber(metadata.PROCESO_ELIMINACION) or 0)
     if elapsed >= windowSeconds then
-        DebugPrint("ERROR: El plazo de restauración para este personaje ya venció.")
         TriggerClientEvent('QBCore:Notify', src, "El plazo para restaurar este personaje ya venció", "error")
         return
     end
 
+    -- ==============================================================
+    -- 🔍 BÚSQUEDA DE SLOT LIBRE PARA LA RESTAURACIÓN
+    -- ==============================================================
+    -- 1. Ver cuántos slots máximos tiene este jugador
+    local maxSlots = Config.DefaultSlots
+    if Config.CustomSlots and Config.CustomSlots[license] then
+        maxSlots = Config.CustomSlots[license]
+    end
+
+    -- 2. Obtener todos los CIDs que ya tiene ocupados
+    local activeChars = MySQL.query.await('SELECT cid FROM players WHERE license = ? AND cid IS NOT NULL', {license})
+    local takenSlots = {}
+    for i = 1, #activeChars do
+        takenSlots[tonumber(activeChars[i].cid)] = true
+    end
+
+    -- 3. Buscar el primer slot vacío
+    local freeSlot = nil
+    for i = 1, maxSlots do
+        if not takenSlots[i] then
+            freeSlot = i
+            break
+        end
+    end
+
+    -- 4. Si no hay hueco, bloqueamos la restauración
+    if not freeSlot then
+        DebugPrint("ERROR: El jugador " .. GetPlayerName(src) .. " intentó restaurar pero no tiene slots libres.")
+        TriggerClientEvent('QBCore:Notify', src,
+            "No tienes ningún slot libre para restaurar este personaje. Borra uno primero.", "error")
+        return
+    end
+    -- ==============================================================
+
     metadata.PROCESO_ELIMINACION = nil
 
     local updOk, updErr = pcall(function()
-        MySQL.update.await('UPDATE players SET metadata = ? WHERE citizenid = ?', {json.encode(metadata), citizenid})
+        -- Le asignamos el nuevo 'freeSlot' encontrado
+        MySQL.update.await('UPDATE players SET metadata = ?, cid = ? WHERE citizenid = ?',
+            {json.encode(metadata), freeSlot, citizenid})
     end)
+
+    InvalidateCharacterCache(license)
 
     if not updOk then
         DebugPrint("  ⚠ ERROR restaurando el personaje: " .. tostring(updErr))
@@ -360,9 +426,10 @@ RegisterNetEvent('DP-MultiCharacter:server:restoreCharacter', function(citizenid
         return
     end
 
-    DebugPrint("Personaje restaurado correctamente (CitizenID: " .. tostring(citizenid) .. ")")
+    DebugPrint("Personaje restaurado correctamente en el Slot " .. tostring(freeSlot) .. " (CitizenID: " ..
+                   tostring(citizenid) .. ")")
     TriggerClientEvent('QBCore:Notify', src, "Personaje restaurado correctamente", "success")
-    TriggerClientEvent('DP-MultiCharacter:client:reorderDone', src) -- Reutilizamos el mismo aviso de "refresca la lista"
+    TriggerClientEvent('DP-MultiCharacter:client:reorderDone', src)
 end)
 
 -- ==========================================
@@ -423,6 +490,12 @@ end)
 -- Actualiza el campo `cid` de cada personaje para reflejar su nueva posición.
 RegisterNetEvent('DP-MultiCharacter:server:reorderCharacters', function(order)
     local src = source
+
+    if not CheckRateLimit(src, 'reorder') then
+        TriggerClientEvent('QBCore:Notify', src, "Has guardado el orden hace poco. Espera un momento.", "error")
+        return
+    end
+
     if not order or type(order) ~= "table" or #order == 0 then
         DebugPrint("reorderCharacters: payload inválido o vacío.")
         return
@@ -464,6 +537,8 @@ RegisterNetEvent('DP-MultiCharacter:server:reorderCharacters', function(order)
     MySQL.transaction.await(updates)
 
     DebugPrint("  → " .. tostring(#updates) .. " personajes reordenados correctamente en la BD.")
+
+    InvalidateCharacterCache(license)
 
     -- 🚨 IMPORTANTE: pausar un frame para asegurar que los cambios están en disco
     -- (MySQL.transaction.await ya espera, pero damos un margen por seguridad)

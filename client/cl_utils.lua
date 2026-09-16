@@ -12,17 +12,57 @@ end
 -- ==========================================
 -- 🔧 UTILIDADES DEL CLIENTE
 -- ==========================================
--- Adaptador de notificaciones (Editable por el cliente)
--- Esta función centraliza las notificaciones enviadas al jugador desde la UI.
 function SendNotify(msg, type)
     DebugPrint("Enviando notificación al jugador: " .. tostring(msg) .. " | Tipo: " .. tostring(type))
     QBCore.Functions.Notify(msg, type)
 end
 
--- Evento activado tras la inserción en SQL para llevar al jugador a personalizar su personaje
 RegisterNetEvent('DP-MultiCharacter:client:openClothing', function()
     DebugPrint("Evento 'openClothing' disparado. Abriendo menú de creación de personaje inicial.")
-    -- Por defecto apuntamos a qb-clothing. 
-    -- Si el servidor usa illenium-appearance u otro, se cambia aquí.
-    TriggerEvent('qb-clothes:client:CreateFirstCharacter')
+    TriggerEvent('qb-clothing:client:CreateFirstCharacter')
+end)
+
+-- ==========================================
+-- 🔗 ENLACE DE COMPATIBILIDAD CON ROPA Y SPAWN
+-- ==========================================
+RegisterNetEvent('qb-multicharacter:client:chooseSpawn', function()
+    DebugPrint("qb-clothing ha terminado. Iniciando secuencia final de spawn...")
+
+    -- 1. Obligamos al juego a esperar medio segundo para que QBCore termine
+    -- de guardar la ropa recién creada en la base de datos sin atragantarse.
+    Wait(500)
+
+    -- 2. Recargamos forzosamente los datos del jugador para asegurarnos
+    -- de que el cliente tiene el citizenid y todo lo demás actualizado.
+    QBCore.Functions.GetPlayerData(function(cData)
+        if not cData or not cData.citizenid then
+            DebugPrint("ADVERTENCIA: cData nulo o sin citizenid al salir de la ropa. Reintentando...")
+            Wait(500)
+            cData = QBCore.Functions.GetPlayerData()
+        end
+
+        if Config.SkipSelection then
+            DebugPrint("SkipSelection activado. Mandando al spawn por defecto.")
+            local coords = Config.DefaultSpawn
+
+            -- Aseguramos posición física
+            SetEntityCoords(PlayerPedId(), coords.x, coords.y, coords.z)
+            SetEntityHeading(PlayerPedId(), coords.w)
+            SetEntityVisible(PlayerPedId(), true, false)
+            FreezeEntityPosition(PlayerPedId(), false)
+
+            -- 3. EL DESPERTAR: Forzamos la secuencia de inicio de sesión de QBCore
+            -- Esto es crucial: le decimos al servidor "Oye, ya estoy en el suelo, 
+            -- cárgame las llaves, el inventario, los trabajos..."
+            TriggerServerEvent('QBCore:Server:OnPlayerLoaded')
+            TriggerEvent('QBCore:Client:OnPlayerLoaded')
+
+            -- 4. Un último toque de seguridad para despertar el inventario
+            TriggerEvent('DP-Inventory:client:updateInventory')
+        else
+            DebugPrint("Abriendo menú de qb-spawn.")
+            TriggerEvent('qb-spawn:client:setupSpawns', cData, true, nil)
+            TriggerEvent('qb-spawn:client:openUI', true)
+        end
+    end)
 end)
