@@ -141,14 +141,15 @@ end)
 -- Función auxiliar interna para manejar el spawn de forma limpia
 function ProceedToSpawn(src, cData)
     DebugPrint("Ejecutando ProceedToSpawn para el jugador.")
-    if Config.SkipSelection then
-        DebugPrint("Config.SkipSelection está activo. Retornando a la última ubicación (spawnLastLocation).")
+    if Config.SpawnPoints.SkipSelection then
+        DebugPrint("Config.SpawnPoints.SkipSelection está activo. Retornando a la última ubicación (spawnLastLocation).")
         local coords = json.decode(cData.position)
         TriggerClientEvent('DP-MultiCharacter:client:spawnLastLocation', src, coords, cData)
     else
-        DebugPrint("Config.SkipSelection inactivo. Abriendo menú nativo de qb-spawn.")
-        TriggerClientEvent('qb-spawn:client:setupSpawns', src, cData, false, nil)
-        TriggerClientEvent('qb-spawn:client:openUI', src, true)
+        DebugPrint("Config.SpawnPoints.SkipSelection inactivo. Abriendo el selector de spawn propio de DP-MultiCharacter.")
+        -- 'false' = personaje ya existente (no es creación nueva, no se ofrecen apartamentos)
+        TriggerClientEvent('DP-MultiCharacter:client:setupSpawns', src, cData, false, nil)
+        TriggerClientEvent('DP-MultiCharacter:client:openSpawnUI', src)
     end
 end
 

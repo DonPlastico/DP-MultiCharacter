@@ -101,6 +101,67 @@ function setFooterZoomState(zoomed) {
 }
 
 // ==========================================
+// 🔒 BLOQUEO GLOBAL DE UI DURANTE LOADINGS
+// ==========================================
+// Mientras cualquier acción async está en curso (crear personaje, jugar, borrar,
+// restaurar, comprar slot...), el usuario podía seguir pulsando OTROS botones,
+// abrir otros modales, cancelar con Escape, navegar con flechas, etc. — eso podía
+// disparar peticiones simultáneas/contradictorias a Lua y romper el estado del
+// script (p.ej. cancelar la creación de un personaje a medio crear). Para evitarlo,
+// isUILocked se activa junto con CUALQUIER setButtonLoading(btn, true), y un overlay
+// invisible a pantalla completa captura todos los clics mientras tanto. El listener
+// global de teclado (Escape/Enter/flechas) comprueba esta misma bandera y no hace
+// nada si está bloqueado. Se cuenta con un contador (no un booleano simple) por si
+// en algún momento hubiera dos loadings solapados; solo se desbloquea cuando el
+// último de ellos termina.
+let isUILocked = false;
+let uiLockCount = 0;
+let uiLockOverlayEl = null;
+
+function getUILockOverlay() {
+    if (!uiLockOverlayEl) {
+        uiLockOverlayEl = document.createElement('div');
+        uiLockOverlayEl.id = 'ui-lock-overlay';
+        uiLockOverlayEl.style.position = 'fixed';
+        uiLockOverlayEl.style.top = '0';
+        uiLockOverlayEl.style.left = '0';
+        uiLockOverlayEl.style.width = '100%';
+        uiLockOverlayEl.style.height = '100%';
+        uiLockOverlayEl.style.zIndex = '99999'; // Por encima de cualquier modal (incluido modal-alert)
+        uiLockOverlayEl.style.background = 'transparent';
+        uiLockOverlayEl.style.display = 'none';
+        uiLockOverlayEl.style.cursor = 'wait';
+        // Capturamos y anulamos el clic en fase de captura, antes de que llegue a
+        // ningún otro listener delegado (incluido el de sonidos), para que ni
+        // siquiera suene nada mientras la UI está bloqueada.
+        uiLockOverlayEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+        }, true);
+        document.body.appendChild(uiLockOverlayEl);
+    }
+    return uiLockOverlayEl;
+}
+
+function lockUI() {
+    uiLockCount++;
+    isUILocked = true;
+    getUILockOverlay().style.display = 'block';
+    DebugPrint("UI bloqueada (loadings activos: " + uiLockCount + ").");
+}
+
+function unlockUI() {
+    uiLockCount = Math.max(0, uiLockCount - 1);
+    if (uiLockCount === 0) {
+        isUILocked = false;
+        getUILockOverlay().style.display = 'none';
+        DebugPrint("UI desbloqueada (sin loadings activos).");
+    } else {
+        DebugPrint("UI sigue bloqueada (loadings activos restantes: " + uiLockCount + ").");
+    }
+}
+
+// ==========================================
 // ⏳ ESTADOS DE CARGA (LOADING)
 // ==========================================
 function setButtonLoading(btn, isLoading) {
@@ -115,6 +176,7 @@ function setButtonLoading(btn, isLoading) {
         btn.disabled = true;
         btn.style.pointerEvents = 'none';
         btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+        lockUI();
     } else {
         btn.disabled = false;
         btn.style.pointerEvents = 'auto';
@@ -122,6 +184,7 @@ function setButtonLoading(btn, isLoading) {
             btn.innerHTML = btn.dataset.originalHtml;
         }
         btn.style.minWidth = '';
+        unlockUI();
     }
 }
 
@@ -619,6 +682,29 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (data.action === "deletedCharactersList") {
             DebugPrint("Evento 'deletedCharactersList' recibido. Personajes en papelera: " + (data.characters ? data.characters.length : 0));
             renderRestoreList(data.characters || []);
+        } else if (data.action === "spawnToggleUI") {
+            DebugPrint("Evento 'spawnToggleUI' recibido. Estado: " + data.status);
+            if (data.translations) {
+                translations = data.translations;
+                applyTranslations();
+            }
+            toggleSpawnScreen(data.status);
+        } else if (data.action === "spawnSetupLocations") {
+            DebugPrint("Evento 'spawnSetupLocations' recibido. Puntos: " + (data.locations ? data.locations.length : 0) + ", casas: " + (data.houses ? data.houses.length : 0));
+            renderSpawnCarousel({
+                points: data.locations || [],
+                houses: data.houses || [],
+                apartments: [],
+                enableLastLocation: !!data.enableLastLocation
+            });
+        } else if (data.action === "spawnSetupApartments") {
+            DebugPrint("Evento 'spawnSetupApartments' recibido. Apartamentos: " + (data.locations ? Object.keys(data.locations).length : 0));
+            renderSpawnCarousel({
+                points: [],
+                houses: [],
+                apartments: data.locations || {},
+                enableLastLocation: false
+            });
         }
     });
 
@@ -688,6 +774,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Navegación principal con flechas del teclado y tecla Escape
     document.addEventListener('keydown', (e) => {
+        // Mientras cualquier loading esté activo, ESC/Enter/flechas no deben hacer
+        // absolutamente nada (evita cancelar, navegar o confirmar otra acción a medio
+        // camino de una petición ya en curso hacia el servidor).
+        if (isUILocked) {
+            DebugPrint("Tecla ignorada: la UI está bloqueada por un loading en curso.");
+            return;
+        }
+
         if (e.key === "Escape") {
             // Cerrar CUALQUIER modal que esté abierto (Borrar, Comprar, Ajustes...)
             const openModals = Array.from(document.querySelectorAll('.modal-overlay')).filter(m => m.style.display === "flex");
@@ -1499,9 +1593,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     }));
 
 
-                    // Bloqueamos la tabla visualmente mientras carga
+                    // Bloqueamos la tabla visualmente mientras carga, y la UI entera
+                    // para evitar acciones contradictorias mientras se persiste el orden.
                     els.tbody.style.opacity = '0.5';
                     els.tbody.style.pointerEvents = 'none';
+                    lockUI();
 
                     axios.post(`https://${resName}/reorderCharacters`, JSON.stringify({
                         order: orderPayload
@@ -1516,6 +1612,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Desbloqueamos la tabla
                         els.tbody.style.opacity = '1';
                         els.tbody.style.pointerEvents = 'auto';
+                        unlockUI();
                     });
                 }
             }
@@ -3011,6 +3108,160 @@ function applyExportImportVisibility() {
     document.body.classList.toggle('import-chars-disabled', !importCharactersEnabled);
     DebugPrint("Visibilidad Exportar/Importar aplicada. Exportar: " + exportCharactersEnabled + ", Importar: " + importCharactersEnabled);
 }
+
+// ==========================================
+// 🗺️ SELECTOR DE SPAWN (sustituye a qb-spawn)
+// ==========================================
+let selectedSpawnCard = null; // Referencia al <div class="spawn-card"> actualmente elegido
+
+// Muestra u oculta la pantalla completa del selector de spawn. La abre/cierra
+// cl_spawn.lua vía SendNUIMessage({action:'spawnToggleUI', status:...}).
+function toggleSpawnScreen(visible) {
+    const screen = document.getElementById('spawn-select-screen');
+    if (!screen) return;
+
+    screen.style.display = visible ? "flex" : "none";
+
+    if (visible) {
+        // Reset del estado de selección cada vez que se abre
+        selectedSpawnCard = null;
+        const confirmBtn = document.getElementById('btn-spawn-confirm');
+        if (confirmBtn) confirmBtn.disabled = true;
+    }
+}
+
+// Construye una única tarjeta a partir de la <template>, con sus datos y listeners
+function buildSpawnCard(type, id, label, description, imagePath) {
+    const template = document.getElementById('spawn-card-template');
+    const card = template.content.firstElementChild.cloneNode(true);
+
+    card.dataset.type = type;
+    card.dataset.id = id;
+    card.querySelector('.spawn-card-label').textContent = label || '';
+    card.querySelector('.spawn-card-description').textContent = description || '';
+
+    const imageEl = card.querySelector('.spawn-card-image');
+    if (imagePath) {
+        imageEl.style.backgroundImage = `url('${imagePath}')`;
+    }
+
+    // Al pasar el cursor por primera vez sobre la tarjeta, previsualizamos la cámara
+    // en esa ubicación (sin spawnear todavía) — mismo comportamiento que qb-spawn original.
+    let previewRequested = false;
+    card.addEventListener('mouseenter', () => {
+        if (previewRequested) return;
+        previewRequested = true;
+        axios.post(`https://${resName}/spawnPreviewLocation`, JSON.stringify({ type, id }))
+            .catch(() => DebugPrint("Error al previsualizar la cámara del punto de spawn."));
+    });
+
+    // Al hacer clic, la tarjeta queda "seleccionada" (no confirma todavía)
+    card.addEventListener('click', () => {
+        document.querySelectorAll('.spawn-card.selected').forEach(el => el.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedSpawnCard = card;
+
+        const confirmBtn = document.getElementById('btn-spawn-confirm');
+        if (confirmBtn) confirmBtn.disabled = false;
+
+        // Si el cursor no llegó a disparar el preview (p.ej. navegación por teclado
+        // en el futuro), lo pedimos también aquí para asegurar que la cámara se mueve.
+        if (!previewRequested) {
+            previewRequested = true;
+            axios.post(`https://${resName}/spawnPreviewLocation`, JSON.stringify({ type, id }))
+                .catch(() => DebugPrint("Error al previsualizar la cámara del punto de spawn."));
+        }
+    });
+
+    return card;
+}
+
+// Rellena el carrusel completo a partir de los datos recibidos de Lua.
+// data = { points: [...Config.SpawnPoints...], houses: [...], apartments: {...}, enableLastLocation }
+function renderSpawnCarousel(data) {
+    const carousel = document.getElementById('spawn-carousel');
+    if (!carousel) return;
+
+    carousel.innerHTML = '';
+    selectedSpawnCard = null;
+    const confirmBtn = document.getElementById('btn-spawn-confirm');
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    // 1. Última ubicación (si está habilitada y aplica)
+    if (data.enableLastLocation) {
+        const card = buildSpawnCard(
+            'current',
+            'current',
+            translations && translations.ui_spawn_last_location ? translations.ui_spawn_last_location : 'Última ubicación',
+            translations && translations.ui_spawn_last_location_desc ? translations.ui_spawn_last_location_desc : 'Continúa donde lo dejaste.',
+            null
+        );
+        carousel.appendChild(card);
+    }
+
+    // 2. Puntos fijos de Config.SpawnPoints (vienen como array con label/description/image)
+    (data.points || []).forEach((point, index) => {
+        if (typeof point !== 'object' || !point.coords) return; // Se saltan las claves de config (SkipSelection, etc.)
+        const label = translations && translations[point.label] ? translations[point.label] : point.label;
+        const desc = translations && translations[point.description] ? translations[point.description] : point.description;
+        const card = buildSpawnCard('point', index + 1, label, desc, point.image);
+        carousel.appendChild(card);
+    });
+
+    // 3. Casas propias del jugador (array de {house, label, coords})
+    (data.houses || []).forEach((house, index) => {
+        const card = buildSpawnCard(
+            'house',
+            index + 1,
+            house.label || house.house,
+            translations && translations.ui_spawn_house_desc ? translations.ui_spawn_house_desc : 'Tu propiedad.',
+            null
+        );
+        carousel.appendChild(card);
+    });
+
+    // 4. Apartamentos disponibles (objeto {clave: {label, ...}}, solo en creación de personaje)
+    Object.keys(data.apartments || {}).forEach((key) => {
+        const apt = data.apartments[key];
+        const card = buildSpawnCard(
+            'apartment',
+            key,
+            (apt && apt.label) || key,
+            translations && translations.ui_spawn_apartment_desc ? translations.ui_spawn_apartment_desc : 'Tu nuevo hogar.',
+            apt && apt.image ? apt.image : null
+        );
+        carousel.appendChild(card);
+    });
+
+    DebugPrint("Carrusel de spawn renderizado con " + carousel.children.length + " tarjetas.");
+}
+
+// Botones de salir / confirmar del selector de spawn (listeners únicos, añadidos una vez)
+document.addEventListener('DOMContentLoaded', () => {
+    const exitBtn = document.getElementById('btn-spawn-exit');
+    if (exitBtn) {
+        exitBtn.addEventListener('click', () => {
+            DebugPrint("Saliendo del selector de spawn (btn-spawn-exit).");
+            axios.post(`https://${resName}/spawnExit`, JSON.stringify({}))
+                .catch(() => DebugPrint("Error al salir del selector de spawn."));
+        });
+    }
+
+    const confirmBtn = document.getElementById('btn-spawn-confirm');
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', () => {
+            if (!selectedSpawnCard || confirmBtn.disabled) return;
+            const type = selectedSpawnCard.dataset.type;
+            const id = selectedSpawnCard.dataset.id;
+            DebugPrint("Confirmando spawn. Tipo=" + type + " id=" + id);
+
+            setButtonLoading(confirmBtn, true);
+            axios.post(`https://${resName}/spawnConfirm`, JSON.stringify({ type, id }))
+                .catch(() => DebugPrint("Error al confirmar el punto de spawn."))
+                .finally(() => setButtonLoading(confirmBtn, false));
+        });
+    }
+});
 
 // Construye e inyecta los contenedores (slots) HTML para cada ranura de personaje permitida
 function renderSlots() {

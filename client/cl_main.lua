@@ -611,14 +611,15 @@ RegisterNetEvent('DP-MultiCharacter:client:loadSkinAndSpawn', function(model, sk
     end
 
     -- Una vez aplicada la skin, enviamos al jugador al selector de spawns o su última ubicación
-    if Config.SkipSelection then
+    if Config.SpawnPoints.SkipSelection then
         DebugPrint("SkipSelection activado. Spawneando directamente en última posición.")
         local coords = DecodePosition(cData.position)
         TriggerEvent('DP-MultiCharacter:client:spawnLastLocation', coords, cData)
     else
-        DebugPrint("SkipSelection desactivado. Abriendo selector de spawn de qb-spawn.")
-        TriggerEvent('qb-spawn:client:setupSpawns', cData, false, nil)
-        TriggerEvent('qb-spawn:client:openUI', true)
+        DebugPrint("SkipSelection desactivado. Abriendo el selector de spawn propio de DP-MultiCharacter.")
+        -- 'false' = personaje ya existente (no es creación nueva, no se ofrecen apartamentos)
+        TriggerEvent('DP-MultiCharacter:client:setupSpawns', cData, false, nil)
+        TriggerEvent('DP-MultiCharacter:client:openSpawnUI')
     end
 end)
 

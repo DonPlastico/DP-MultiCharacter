@@ -114,6 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
         '.expimp-format-btn',
         '.table-btn',
         '.grid-switch',
+        '.spawn-card',
+        '.spawn-select-btn',
         '[role="switch"]',
         '[role="button"]',
         '.dropdown-option',
@@ -129,7 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
         '.btn-modal-cancel',
         '#btn-cancel-reg',
         '.btn-delete-char',
-        '.btn-restore-cancel'
+        '.btn-restore-cancel',
+        '#btn-spawn-exit'
     ].join(', ');
 
     // El hover (mouseover) burbujea con CADA hijo que el cursor cruza dentro del propio

@@ -80,9 +80,25 @@ Config.CharactersAnimation = {
 }
 
 Config.SpawnPoints = {
-    SkipSelection = true, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos
+    SkipSelection = false, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos
     DefaultSpawn = vector4(-1046.02, -2751.97, 21.36, 326.05), -- Spawn de emergencia
 
+    -- Habilita la opción "Última ubicación" como primera tarjeta del carrusel
+    -- (solo aplica cuando el jugador ya tiene una posición guardada, ej. tras /logout).
+    EnableLastLocation = true,
+
+    -- Integración con casas propias (qb-houses). Si está activo y el jugador posee
+    -- alguna, aparecen como tarjetas adicionales en el carrusel ("Mi casa: <dirección>").
+    EnableHouses = true,
+
+    -- Integración con apartamentos (qb-apartments). Solo se ofrece al CREAR un
+    -- personaje nuevo, nunca a uno ya existente. Si el jugador aún no tiene apartamento
+    -- y Config.SpawnPoints.ApartmentsStarting es true, el carrusel muestra los
+    -- apartamentos disponibles para elegir uno como parte de la creación del personaje.
+    EnableApartments = true,
+    ApartmentsStarting = true,
+
+    -- Puntos de spawn fijos, mostrados como tarjetas con foto en el carrusel.
     {
         label = "spawn_paleto_label",
         description = "spawn_paleto_description",

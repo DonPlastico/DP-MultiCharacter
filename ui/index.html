@@ -580,11 +580,7 @@
 
           <div class="input-group">
             <label for="reg-dob" data-trans="ui_birthdate">[ui_birthdate]</label>
-            <input
-              type="text"
-              id="reg-dob"
-              placeholder="YYYY-MM-DD"
-              readonly />
+            <input type="text" id="reg-dob" placeholder="YYYY-MM-DD" readonly />
           </div>
 
           <div class="input-group">
@@ -684,6 +680,66 @@
           </footer>
         </div>
       </div>
+
+      <!-- PANTALLA SELECTOR DE SPAWN (sustituye a qb-spawn) -->
+      <!-- Se abre vía SendNUIMessage({action:'spawnToggleUI', status:true}) desde cl_spawn.lua -->
+      <div id="spawn-select-screen" class="screen-container" style="display: none">
+        <!-- Fondo oscuro consistente con el resto de la UI -->
+        <div class="landing-bg-container">
+          <div class="landing-bg show" id="bg-spawn"></div>
+        </div>
+
+        <div class="spawn-select-wrapper">
+          <header class="spawn-select-header">
+            <h1 class="spawn-select-title" data-trans="ui_spawn_select_title">
+              [ui_spawn_select_title]
+            </h1>
+            <p class="spawn-select-subtitle" data-trans="ui_spawn_select_subtitle">
+              [ui_spawn_select_subtitle]
+            </p>
+          </header>
+
+          <!-- Carrusel de tarjetas de spawn: se rellena dinámicamente por JS a partir de
+               spawnSetupLocations (puntos fijos + última ubicación + casas) o
+               spawnSetupApartments (solo al crear personaje nuevo). -->
+          <div class="spawn-carousel" id="spawn-carousel">
+            <!-- Tarjetas inyectadas dinámicamente aquí -->
+          </div>
+
+          <footer class="spawn-select-footer">
+            <button
+              type="button"
+              class="spawn-select-btn spawn-select-cancel"
+              id="btn-spawn-exit">
+              <i class="fas fa-times"></i>
+              <span data-trans="ui_spawn_exit">[ui_spawn_exit]</span>
+            </button>
+            <button
+              type="button"
+              class="spawn-select-btn spawn-select-confirm"
+              id="btn-spawn-confirm"
+              disabled>
+              <i class="fas fa-check"></i>
+              <span data-trans="ui_spawn_confirm">[ui_spawn_confirm]</span>
+            </button>
+          </footer>
+        </div>
+      </div>
+
+      <!-- Plantilla de tarjeta del carrusel de spawn (clonada por JS, nunca se muestra tal cual) -->
+      <template id="spawn-card-template">
+        <div class="spawn-card" data-type="" data-id="">
+          <div class="spawn-card-image"></div>
+          <div class="spawn-card-overlay"></div>
+          <div class="spawn-card-info">
+            <span class="spawn-card-label"></span>
+            <span class="spawn-card-description"></span>
+          </div>
+          <div class="spawn-card-check">
+            <i class="fas fa-check"></i>
+          </div>
+        </div>
+      </template>
 
       <!-- MODAL CONFIRMACIÓN DE BORRADO -->
       <div id="delete-modal" class="modal-overlay" style="display: none">

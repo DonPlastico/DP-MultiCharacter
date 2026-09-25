@@ -41,7 +41,7 @@ RegisterNetEvent('qb-multicharacter:client:chooseSpawn', function()
             cData = QBCore.Functions.GetPlayerData()
         end
 
-        if Config.SkipSelection then
+        if Config.SpawnPoints.SkipSelection then
             DebugPrint("SkipSelection activado. Mandando al spawn por defecto.")
             local coords = Config.DefaultSpawn
 
@@ -60,9 +60,19 @@ RegisterNetEvent('qb-multicharacter:client:chooseSpawn', function()
             -- 4. Un último toque de seguridad para despertar el inventario
             TriggerEvent('DP-Inventory:client:updateInventory')
         else
-            DebugPrint("Abriendo menú de qb-spawn.")
-            TriggerEvent('qb-spawn:client:setupSpawns', cData, true, nil)
-            TriggerEvent('qb-spawn:client:openUI', true)
+            DebugPrint("Abriendo el selector de spawn propio de DP-MultiCharacter (personaje nuevo).")
+            -- Se mantiene el paso por qb-apartments (recurso externo) como intermediario:
+            -- es quien decide si el jugador ya tiene apartamento o si hay que ofrecerle
+            -- elegir uno de los disponibles (Apartments.Starting). Solo cambiamos a qué
+            -- eventos finales apunta (los propios de DP-MultiCharacter en vez de qb-spawn).
+            if GetResourceState('qb-apartments') == 'started' then
+                TriggerEvent('apartments:client:setupSpawnUI', cData)
+            else
+                -- Sin qb-apartments instalado: abrimos directamente el selector propio,
+                -- sin ofrecer apartamentos (solo puntos fijos / casas / última ubicación).
+                TriggerEvent('DP-MultiCharacter:client:setupSpawns', cData, true, nil)
+                TriggerEvent('DP-MultiCharacter:client:openSpawnUI')
+            end
         end
     end)
 end)
