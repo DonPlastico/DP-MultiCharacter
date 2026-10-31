@@ -178,39 +178,43 @@ RegisterNUICallback('spawnExit', function(_, cb)
 end)
 
 -- El jugador pasa el cursor/selecciona una tarjeta: movemos la cámara hacia ese punto
--- SIN spawnear todavía (igual que el 'setCam' del qb-spawn original)
 RegisterNUICallback('spawnPreviewLocation', function(data, cb)
     local locType = tostring(data.type)
     local locId = tostring(data.id)
-    DebugPrint("Previsualizando cámara para tipo=" .. locType .. " id=" .. locId)
 
     DoScreenFadeOut(200)
     Wait(500)
     DoScreenFadeIn(200)
 
     if locType == 'current' then
-        local pos = GetEntityCoords(PlayerPedId())
-        MoveSpawnCameraTo(pos)
+        local decodedPos = DecodePosition(pendingCData.position)
+        if decodedPos and decodedPos.x then
+            local distMenu = #(vector3(decodedPos.x, decodedPos.y, decodedPos.z) -
+                                 vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
+            if distMenu < 50.0 then
+                MoveSpawnCameraTo(Config.SpawnPoints.DefaultSpawn)
+            else
+                MoveSpawnCameraTo(vector3(decodedPos.x, decodedPos.y, decodedPos.z))
+            end
+        else
+            MoveSpawnCameraTo(Config.SpawnPoints.DefaultSpawn)
+        end
     elseif locType == 'house' then
         local house = currentHouses[tonumber(locId)]
         if house and house.coords then
             MoveSpawnCameraTo(house.coords.enter or house.coords)
         end
     elseif locType == 'apartment' then
-        -- locId es la clave string del tipo de apartamento (ej. "luxury_apartment"),
-        -- igual que en Apartments.Locations, no un índice numérico.
         local apt = currentApartments[locId]
         if apt and apt.coords then
             MoveSpawnCameraTo(apt.coords.enter or apt.coords)
         end
     else
-        -- Punto fijo de Config.SpawnPoints (índice numérico dentro de la tabla)
         local point = Config.SpawnPoints[tonumber(locId)]
         if point and point.coords then
             MoveSpawnCameraTo(point.coords)
         end
     end
-
     cb('ok')
 end)
 
@@ -219,62 +223,66 @@ RegisterNUICallback('spawnConfirm', function(data, cb)
     local locType = tostring(data.type)
     local locId = tostring(data.id)
     local ped = PlayerPedId()
-    DebugPrint("Confirmando spawn. Tipo=" .. locType .. " id=" .. locId)
 
     if locType == 'apartment' then
-        -- Los apartamentos siguen gestionándose por qb-apartments (recurso externo);
-        -- DP-MultiCharacter solo deja de depender de qb-spawn como intermediario.
-        -- IMPORTANTE: apartments:server:CreateApartment(type, label, firstSpawn) espera
-        -- el TIPO del apartamento (la clave string dentro de Apartments.Locations, ej.
-        -- "luxury_apartment"), NO un índice numérico. 'locId' aquí es esa misma clave,
-        -- tal como llega en Apartments.Locations al NUI (ver spawnSetupApartments).
         local apt = currentApartments[locId]
-        PreSpawnPlayer()
-        Wait(3500)
+        SetSpawnUIDisplay(false)
+        DoScreenFadeOut(500)
+        Wait(1500)
+        DestroySpawnCameras()
         TriggerServerEvent('apartments:server:CreateApartment', locId, apt and apt.label or nil, true)
         TriggerServerEvent('QBCore:Server:OnPlayerLoaded')
         TriggerEvent('QBCore:Client:OnPlayerLoaded')
-        PostSpawnPlayer()
+        FreezeEntityPosition(ped, false)
+        SetEntityVisible(ped, true, false)
+        Wait(500)
+        DoScreenFadeIn(250)
         cb('ok')
         return
     end
 
-    PreSpawnPlayer()
+    SetSpawnUIDisplay(false)
 
+    -- Determinar destino exacto basado en la elección del UI
+    local targetCoords = Config.SpawnPoints.DefaultSpawn
     if locType == 'current' then
-        local pos = GetEntityCoords(ped)
-        local heading = GetEntityHeading(ped)
-        SetEntityCoords(ped, pos.x, pos.y, pos.z)
-        SetEntityHeading(ped, heading)
+        local decodedPos = DecodePosition(pendingCData.position)
+        if decodedPos and decodedPos.x then
+            local distMenu = #(vector3(decodedPos.x, decodedPos.y, decodedPos.z) -
+                                 vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
+            if distMenu > 50.0 then
+                targetCoords = decodedPos
+            end
+        end
     elseif locType == 'house' then
         local house = currentHouses[tonumber(locId)]
-        -- Delegamos en qb-houses (recurso externo) para que gestione la entrada
-        -- correctamente (blips, interiores, meta de "dentro de casa", etc.)
-        if house and house.house then
-            TriggerEvent('qb-houses:client:enterOwnedHouse', house.house)
+        if house and house.coords then
+            targetCoords = house.coords.enter or house.coords
         end
-        TriggerServerEvent('qb-houses:server:SetInsideMeta', 0, false)
-        TriggerServerEvent('qb-apartments:server:SetInsideMeta', 0, 0, false)
     else
         local point = Config.SpawnPoints[tonumber(locId)]
         if point and point.coords then
-            local c = point.coords
-            SetEntityCoords(ped, c.x, c.y, c.z)
-            SetEntityHeading(ped, c.w or 0.0)
+            targetCoords = point.coords
         end
-        TriggerServerEvent('qb-houses:server:SetInsideMeta', 0, false)
-        TriggerServerEvent('qb-apartments:server:SetInsideMeta', 0, 0, false)
     end
 
-    TriggerServerEvent('QBCore:Server:OnPlayerLoaded')
-    TriggerEvent('QBCore:Client:OnPlayerLoaded')
-    PostSpawnPlayer()
-    
+    DestroySpawnCameras()
+    TriggerEvent('DP-MultiCharacter:client:spawnLastLocation', targetCoords, pendingCData)
+
+    if locType == 'house' then
+        local house = currentHouses[tonumber(locId)]
+        if house and house.house then
+            TriggerEvent('qb-houses:client:enterOwnedHouse', house.house)
+        end
+    end
+    TriggerServerEvent('qb-houses:server:SetInsideMeta', 0, false)
+    TriggerServerEvent('qb-apartments:server:SetInsideMeta', 0, 0, false)
+
     if locType ~= 'apartment' and isNewCharacterFlow then
         Wait(1000)
         TriggerEvent('qb-clothing:client:CreateFirstCharacter')
     end
-    
+
     cb('ok')
 end)
 

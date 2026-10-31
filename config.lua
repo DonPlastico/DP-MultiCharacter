@@ -17,11 +17,11 @@ Config.Locale = 'es'
 Config.EnableDeleteButton = true -- ¿Permitir a los jugadores borrar a sus personajes?
 
 Config.RateLimits = {
-    create = 10,  -- Segundos de espera entre creación de personajes
-    delete = 10,  -- Segundos de espera entre borrados
-    reorder = 5,  -- Segundos de espera para guardar un nuevo orden
-    export = 15,  -- Segundos de espera entre exportaciones
-    import = 15   -- Segundos de espera entre intentos de importación
+    create = 10, -- Segundos de espera entre creación de personajes
+    delete = 10, -- Segundos de espera entre borrados
+    reorder = 5, -- Segundos de espera para guardar un nuevo orden
+    export = 15, -- Segundos de espera entre exportaciones
+    import = 15 -- Segundos de espera entre intentos de importación
 }
 
 Config.DefaultSlots = 2 -- Personajes gratuitos para todos los usuarios (mínimo: 1, máximo: 7)
@@ -52,12 +52,11 @@ Config.Interior = vector3(-1082.23, -74.83, -99.0)
 Config.HiddenCoords = vector4(-1082.23, -74.83, -105.0, 90.0)
 
 -- Coordenadas individuales para cada slot (separación de 1.15 en el eje Y)
-Config.PedCoords = {
-    vector4(-1082.23, -77.13, -99.0, 270.0), -- Slot 1 (Izquierda)
-    vector4(-1082.23, -75.98, -99.0, 270.0), -- Slot 2 (Centro-Izquierda)
-    vector4(-1082.23, -74.83, -99.0, 270.0), -- Slot 3 (Centro)
-    vector4(-1082.23, -73.68, -99.0, 270.0), -- Slot 4 (Centro-Derecha)
-    vector4(-1082.23, -72.53, -99.0, 270.0) -- Slot 5 (Derecha)
+Config.PedCoords = {vector4(-1082.23, -77.13, -99.0, 270.0), -- Slot 1 (Izquierda)
+vector4(-1082.23, -75.98, -99.0, 270.0), -- Slot 2 (Centro-Izquierda)
+vector4(-1082.23, -74.83, -99.0, 270.0), -- Slot 3 (Centro)
+vector4(-1082.23, -73.68, -99.0, 270.0), -- Slot 4 (Centro-Derecha)
+vector4(-1082.23, -72.53, -99.0, 270.0) -- Slot 5 (Derecha)
 }
 
 -- Separacion constante entre personajes cuando se calcula una distribucion centrada.
@@ -80,7 +79,7 @@ Config.CharactersAnimation = {
 }
 
 Config.SpawnPoints = {
-    SkipSelection = false, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos
+    SkipSelection = true, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos
     DefaultSpawn = vector4(-1046.02, -2751.97, 21.36, 326.05), -- Spawn de emergencia
 
     -- Habilita la opción "Última ubicación" como primera tarjeta del carrusel
@@ -123,14 +122,43 @@ Config.SpawnPoints = {
 
 -- Ítems extras que el jugador puede comprar al crear un personaje.
 -- El precio ('price') se incrementará un +25% visualmente en el NUI.
-Config.StartItemsList = {
-    { name = "id_card", label = "Tarjeta de Identidad", price = 0, min = 0, max = 1 },
-    { name = "phone", label = "Teléfono Móvil", price = 500, min = 0, max = 1000 },
-    { name = "tosti", label = "Sándwich Tostado", price = 2, min = 0, max = 1000 },
-    { name = "water_bottle", label = "Botella de Agua", price = 2, min = 0, max = 1000 },
-    { name = "kurkakola", label = "Lata de Refresco", price = 2, min = 0, max = 1000 },
-    { name = "sandwich", label = "Sándwich Clásico", price = 2, min = 0, max = 1000 },
-}
+Config.StartItemsList = {{
+    name = "id_card",
+    label = "Tarjeta de Identidad",
+    price = 0,
+    min = 0,
+    max = 1
+}, {
+    name = "phone",
+    label = "Teléfono Móvil",
+    price = 500,
+    min = 0,
+    max = 1000
+}, {
+    name = "tosti",
+    label = "Sándwich Tostado",
+    price = 2,
+    min = 0,
+    max = 1000
+}, {
+    name = "water_bottle",
+    label = "Botella de Agua",
+    price = 2,
+    min = 0,
+    max = 1000
+}, {
+    name = "kurkakola",
+    label = "Lata de Refresco",
+    price = 2,
+    min = 0,
+    max = 1000
+}, {
+    name = "sandwich",
+    label = "Sándwich Clásico",
+    price = 2,
+    min = 0,
+    max = 1000
+}}
 
 Config.ExportCharacters = true -- Si es true, aparecerá un botón que permitira exportar los personajes que desee el jugador, con un formato xmt (ASIGNANDO UNA ID UNICA POR PERSONAJE). Si es false, no aparecera dicho botón por lo que no permitira exportar ningun personaje
 Config.ImportCharacters = true -- Si es true, aparecerá un botón que permitira importar personajes que desee el jugador, pegando un texto xmt que se genera con un export (Si el ID unico no coincide o no lo tiene, no se podrá importar, para evitar gente lista que copia cosas de otros)... Si es false, no aparecera dicho botón por lo que no permitira importar ningun personaje
@@ -725,5 +753,4 @@ Config.Nationalities =
     }, {
         label = "Zimbabue",
         id = "zw"
-    }
-}
+    }}
