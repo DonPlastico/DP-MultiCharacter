@@ -32,9 +32,6 @@ RegisterNetEvent('DP-MultiCharacter:client:requestLogout', function()
     local pos = GetEntityCoords(ped)
     local heading = GetEntityHeading(ped)
 
-    print("^3[DEBUG POSICION] El servidor pidió logout. Mis coordenadas físicas justo ahora son: " .. tostring(pos) ..
-              "^7")
-
     -- Le enviamos las coordenadas seguras al servidor para que las guarde ANTES de mandarnos a chooseChar
     TriggerServerEvent('DP-MultiCharacter:server:performLogout', pos, heading)
 end)

@@ -81,12 +81,8 @@ end
 
 RegisterNetEvent('DP-MultiCharacter:server:loadUserData', function(cData)
     local src = source
-    print("^3[DEBUG POSICION] Iniciando sesión para CID: " .. tostring(cData.citizenid) .. ". Posición en cData: " ..
-              tostring(cData.position) .. "^7")
 
     if QBCore.Player.Login(src, cData.citizenid) then
-        print('^2[QBCore]^7 ' .. GetPlayerName(src) .. ' (Citizen ID: ' .. cData.citizenid ..
-                  ') ha cargado exitosamente!')
         QBCore.Commands.Refresh(src)
         LoadIntegrations(src, cData)
 
@@ -177,7 +173,6 @@ end)
 -- 🚪 NUEVO FLUJO DE LOGOUT (BLINDADO CONTRA LA SALA OSCURA)
 -- ==========================================
 QBCore.Commands.Add(Config.CommandLogOut, "Cerrar sesión", {}, false, function(source, args)
-    print("^3[DEBUG POSICION] Comando /logout ejecutado. Pidiendo coordenadas reales al cliente...^7")
     TriggerClientEvent('DP-MultiCharacter:client:requestLogout', source)
 end, "user")
 
@@ -185,14 +180,23 @@ RegisterNetEvent('DP-MultiCharacter:server:performLogout', function(pos, heading
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if Player then
-        print("^3[DEBUG POSICION] El servidor recibe las coordenadas reales del cliente: " .. tostring(pos) .. "^7")
 
         local dist = #(vector3(pos.x, pos.y, pos.z) -
                          vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
+        
         if dist > 50.0 then
-            Player.PlayerData.position = vector4(pos.x, pos.y, pos.z, heading)
+            -- 1. Formateamos como tabla plana para evitar fallos de JSON en FiveM
+            local safePosition = {x = pos.x, y = pos.y, z = pos.z, w = heading}
+            
+            -- 2. Actualizamos QBCore en memoria
+            Player.PlayerData.position = safePosition
             Player.Functions.SetPlayerData("position", Player.PlayerData.position)
-            print("^2[DEBUG POSICION] Coordenadas inyectadas en QBCore con éxito. Guardando BD...^7")
+            
+            -- 3. FORZAMOS la inyección directa por SQL para que no haya margen de error
+            MySQL.update.await('UPDATE players SET position = ? WHERE citizenid = ?', 
+                {json.encode(safePosition), Player.PlayerData.citizenid})
+                
+            print("^2[DEBUG POSICION] Coordenadas inyectadas y forzadas en SQL con éxito.^7")
         else
             print("^1[DEBUG POSICION] ¡ALERTA! El cliente estaba en la sala oculta. IGNORANDO GUARDADO.^7")
         end

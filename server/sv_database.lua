@@ -53,10 +53,6 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', func
         'SELECT p.*, s.model, s.skin FROM players p LEFT JOIN playerskins s ON p.citizenid = s.citizenid AND s.active = 1 WHERE p.license = ? ORDER BY p.cid ASC',
         {license}, function(result)
             for i = 1, (#result), 1 do
-                -- AÑADIDO: Print de trazabilidad absoluta de la Base de Datos
-                print("^5[DEBUG POSICION] BD cruda para " .. result[i].citizenid .. " -> " ..
-                          tostring(result[i].position) .. "^7")
-
                 result[i].charinfo = json.decode(result[i].charinfo)
                 result[i].money = json.decode(result[i].money)
                 result[i].job = json.decode(result[i].job)
