@@ -105,15 +105,21 @@ function SetupCamera(state)
             end
         end)
     else
-        DoScreenFadeOut(500)
-        Wait(500)
+        if not IsScreenFadedOut() then
+            DoScreenFadeOut(300)
+            while not IsScreenFadedOut() do
+                Wait(0)
+            end
+        end
+
         DisplayHud(true)
         DisplayRadar(true)
-        SetCamActive(cam, false)
-        DestroyCam(cam, true)
+        if cam then
+            SetCamActive(cam, false)
+            DestroyCam(cam, true)
+            cam = nil
+        end
         RenderScriptCams(false, false, 1, true, true)
-        Wait(500)
-        DoScreenFadeIn(1000)
     end
 end
 
@@ -366,9 +372,11 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
         coords = Config.SpawnPoints.DefaultSpawn
     end
 
+    -- Antes eran 50 metros, por eso el monte Chilliad se confundía con la sala.
     local distMenu = #(vector3(coords.x, coords.y, coords.z) -
                          vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
-    if distMenu < 50.0 then
+
+    if distMenu < 5.0 then
         coords = Config.SpawnPoints.DefaultSpawn
     end
 
@@ -407,6 +415,13 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
     SetEntityInvincible(ped, false)
     ClearPedTasksImmediately(ped)
 
+    if cData and cData.metadata then
+        local savedHealth = cData.metadata.health or 200
+        local savedArmor = cData.metadata.armor or 0
+        SetEntityHealth(ped, savedHealth)
+        SetPedArmour(ped, savedArmor)
+    end
+
     TriggerServerEvent('QBCore:Server:OnPlayerLoaded')
     TriggerEvent('QBCore:Client:OnPlayerLoaded')
 
@@ -414,7 +429,6 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
     DoScreenFadeIn(1000)
 end)
 
--- Aplica el modelo y envía al jugador a los eventos de spawn
 RegisterNetEvent('DP-MultiCharacter:client:loadSkinAndSpawn', function(model, skinData, cData)
     local playerPed = PlayerPedId()
     local skinModel = tonumber(model) or joaat(model or Config.DefaultMaleModel)
@@ -432,26 +446,21 @@ RegisterNetEvent('DP-MultiCharacter:client:loadSkinAndSpawn', function(model, sk
     end
 
     local coords = DecodePosition(cData.position)
-    if not coords or (type(coords) ~= "table" and type(coords) ~= "vector3" and type(coords) ~= "vector4") or
-        not coords.x then
+    if not coords or not coords.x then
         coords = Config.SpawnPoints.DefaultSpawn
     end
 
-    local distMenu = #(vector3(coords.x, coords.y, coords.z) -
-                         vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
-    if distMenu < 50.0 then
+    local distMenu2D = #(vector2(coords.x, coords.y) - vector2(Config.HiddenCoords.x, Config.HiddenCoords.y))
+
+    if distMenu2D < 50.0 or coords.z < -50.0 then
         coords = Config.SpawnPoints.DefaultSpawn
     end
 
     if Config.SpawnPoints.SkipSelection then
         TriggerEvent('DP-MultiCharacter:client:spawnLastLocation', coords, cData)
     else
-        -- PRE-TELEPORTE: Movemos al jugador congelado a su destino real para la cámara
-        FreezeEntityPosition(playerPed, true)
-        SetEntityVisible(playerPed, false, false)
-        SetEntityCoords(playerPed, coords.x, coords.y, coords.z)
-
-        TriggerEvent('DP-MultiCharacter:client:setupSpawns', cData, false, nil)
+        pendingCData = cData
+        isNewCharacterFlow = false
         TriggerEvent('DP-MultiCharacter:client:openSpawnUI')
     end
 end)

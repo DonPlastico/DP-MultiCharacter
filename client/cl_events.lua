@@ -16,7 +16,10 @@ RegisterNetEvent('DP-MultiCharacter:client:chooseChar', function()
         Wait(1000)
     end
 
-    SetEntityCoords(PlayerPedId(), Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z)
+    local ped = PlayerPedId()
+
+    FreezeEntityPosition(ped, true)
+    SetEntityCoords(ped, Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z)
     Wait(1500)
 
     ShutdownLoadingScreen()
@@ -31,9 +34,11 @@ RegisterNetEvent('DP-MultiCharacter:client:requestLogout', function()
     local ped = PlayerPedId()
     local pos = GetEntityCoords(ped)
     local heading = GetEntityHeading(ped)
+    local health = GetEntityHealth(ped)
+    local armor = GetPedArmour(ped)
 
-    -- Le enviamos las coordenadas seguras al servidor para que las guarde ANTES de mandarnos a chooseChar
-    TriggerServerEvent('DP-MultiCharacter:server:performLogout', pos, heading)
+    -- Le enviamos las coordenadas, la salud y la armadura al servidor
+    TriggerServerEvent('DP-MultiCharacter:server:performLogout', pos, heading, health, armor)
 end)
 
 local function RequestCharactersAndSpawn()
@@ -65,6 +70,13 @@ RegisterNUICallback('deletePreview', function(data, cb)
 end)
 
 RegisterNUICallback('createCharacter', function(data, cb)
+    if not IsScreenFadedOut() then
+        DoScreenFadeOut(300)
+        while not IsScreenFadedOut() do
+            Wait(0)
+        end
+    end
+
     ToggleUI(false)
     DeleteAllPeds()
     TriggerServerEvent('DP-MultiCharacter:server:createCharacter', data)
@@ -72,6 +84,13 @@ RegisterNUICallback('createCharacter', function(data, cb)
 end)
 
 RegisterNUICallback('playCharacter', function(data, cb)
+    if not IsScreenFadedOut() then
+        DoScreenFadeOut(300)
+        while not IsScreenFadedOut() do
+            Wait(0)
+        end
+    end
+
     ToggleUI(false)
     DeleteAllPeds()
     TriggerServerEvent('DP-MultiCharacter:server:loadUserData', data.cData)
@@ -162,4 +181,34 @@ RegisterNetEvent('DP-MultiCharacter:client:reorderDone', function()
     SendNUIMessage({
         action = "reorderDone"
     })
+end)
+
+-- El personaje ya existe en la BD, ahora toca elegir spawn antes de la ropa.
+RegisterNetEvent('DP-MultiCharacter:client:startSpawnSelection', function()
+    DebugPrint("startSpawnSelection recibido. Preparando selector de spawn para personaje nuevo.")
+
+    local QBCore = exports['qb-core']:GetCoreObject()
+    QBCore.Functions.GetPlayerData(function(cData)
+        if not cData or not cData.citizenid then
+            DebugPrint("ADVERTENCIA: cData nulo al iniciar selector de spawn.")
+            return
+        end
+
+        -- Ocultamos cualquier UI residual (la landing ya se ocultó al pulsar CREAR)
+        ToggleUI(false)
+        DeleteAllPeds()
+
+        if Config.SpawnPoints.SkipSelection then
+            -- Si SkipSelection está activo, va directo al spawn por defecto y luego abre ropa
+            local coords = Config.SpawnPoints.DefaultSpawn
+            TriggerEvent('DP-MultiCharacter:client:spawnLastLocation', coords, cData)
+            Wait(1000)
+            TriggerEvent('DP-MultiCharacter:client:openClothing')
+        else
+            -- Delegamos en openSpawnUI (que abre el mapa de DP-PauseMenu)
+            pendingCData = cData
+            isNewCharacterFlow = true
+            TriggerEvent('DP-MultiCharacter:client:openSpawnUI')
+        end
+    end)
 end)

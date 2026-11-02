@@ -19,29 +19,22 @@ shared_scripts {
 }
 
 client_scripts {
-    'client/cl_main.lua',
-    'client/cl_events.lua',
-    'client/cl_utils.lua'
+    'client/*.lua'
 }
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
-    'server/sv_main.lua',
-    'server/sv_database.lua',
-    'server/sv_utils.lua'
+    'server/*.lua',
 }
 
 ui_page 'ui/index.html'
 
 files {
     'ui/index.html',
-    'ui/style.css',
-    'ui/js/app.js',
-    'ui/js/sounds.js',
-    'ui/js/validators.js',
-    'ui/img/bg1.jpg',
-    'ui/img/bg2.png',
-    'ui/img/bg3.jpg',
+    'ui/*.css',
+    'ui/js/*.js',
+    'ui/img/*.jpg',
+    'ui/img/*.png',
     'ui/items/*.png',
     'ui/items/*.jpg',
     'ui/items/*.svg',

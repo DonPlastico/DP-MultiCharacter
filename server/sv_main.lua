@@ -1,5 +1,6 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 local hasDonePreloading = {}
+local isSelectingChar = {} -- Guarda quién está en el menú
 
 local function DebugPrint(msg)
     if Config.Debug then
@@ -96,6 +97,9 @@ RegisterNetEvent('DP-MultiCharacter:server:loadUserData', function(cData)
                     ProceedToSpawn(src, cData)
                 end
             end)
+    else
+        print("^1[FLOW DEBUG] ^7 ERROR: QBCore.Player.Login falló para CitizenID: " ..
+                  tostring(cData and cData.citizenid))
     end
 end)
 
@@ -104,7 +108,6 @@ function ProceedToSpawn(src, cData)
         local coords = json.decode(cData.position)
         TriggerClientEvent('DP-MultiCharacter:client:spawnLastLocation', src, coords, cData)
     else
-        TriggerClientEvent('DP-MultiCharacter:client:setupSpawns', src, cData, false, nil)
         TriggerClientEvent('DP-MultiCharacter:client:openSpawnUI', src)
     end
 end
@@ -152,21 +155,30 @@ RegisterNetEvent('DP-MultiCharacter:server:createCharacter', function(data)
         local Player = QBCore.Functions.GetPlayer(src)
         if Player then
             Player.Functions.SetMetaData("created_at", os.time() * 1000)
-            local initialLog = {{
+            Player.Functions.SetMetaData("activityLog", {{
                 date = os.date("%d/%m/%Y, %H:%M:%S"),
                 text = "Llegada a la ciudad.",
                 icon = "fa-plane-arrival"
-            }}
-            Player.Functions.SetMetaData("activityLog", initialLog)
+            }})
         end
 
         GiveStarterItems(src, data.cart, data.cartTotal)
-        TriggerClientEvent('DP-MultiCharacter:client:openClothing', src)
+
+        -- Le decimos al cliente que ya está creado y que abra el selector de spawn.
+        TriggerClientEvent('DP-MultiCharacter:client:startSpawnSelection', src)
     end
 end)
 
 RegisterNetEvent('DP-MultiCharacter:server:SetBucket', function(bucket)
-    SetPlayerRoutingBucket(source, bucket)
+    local src = source
+    SetPlayerRoutingBucket(src, bucket)
+
+    -- 🛑 BLOQUEAMOS EL GUARDADO DE QBCORE CUANDO ENTRAMOS A LA SALA OCULTA
+    if bucket ~= 0 then
+        isSelectingChar[src] = true
+    else
+        isSelectingChar[src] = nil
+    end
 end)
 
 -- ==========================================
@@ -176,38 +188,150 @@ QBCore.Commands.Add(Config.CommandLogOut, "Cerrar sesión", {}, false, function(
     TriggerClientEvent('DP-MultiCharacter:client:requestLogout', source)
 end, "user")
 
-RegisterNetEvent('DP-MultiCharacter:server:performLogout', function(pos, heading)
+RegisterNetEvent('DP-MultiCharacter:server:performLogout', function(pos, heading, health, armor)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
-    if Player then
 
-        local dist = #(vector3(pos.x, pos.y, pos.z) -
-                         vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
-        
+    if Player then
+        -- 1. Actualizamos la vida y el chaleco en los metadatos antes de guardar
+        if health then
+            Player.Functions.SetMetaData("health", health)
+        end
+        if armor then
+            Player.Functions.SetMetaData("armor", armor)
+        end
+
+        -- 2. COMPROBACIÓN 2D DE SEGURIDAD (Posición)
+        local dist = #(vector2(pos.x, pos.y) - vector2(Config.HiddenCoords.x, Config.HiddenCoords.y))
+
         if dist > 50.0 then
-            -- 1. Formateamos como tabla plana para evitar fallos de JSON en FiveM
-            local safePosition = {x = pos.x, y = pos.y, z = pos.z, w = heading}
-            
-            -- 2. Actualizamos QBCore en memoria
+            local safePosition = {
+                x = pos.x,
+                y = pos.y,
+                z = pos.z,
+                w = heading
+            }
             Player.PlayerData.position = safePosition
             Player.Functions.SetPlayerData("position", Player.PlayerData.position)
-            
-            -- 3. FORZAMOS la inyección directa por SQL para que no haya margen de error
-            MySQL.update.await('UPDATE players SET position = ? WHERE citizenid = ?', 
+
+            -- Guardamos también directamente por MySQL por redundancia y seguridad
+            MySQL.update.await('UPDATE players SET position = ?, last_updated = CURRENT_TIMESTAMP WHERE citizenid = ?',
                 {json.encode(safePosition), Player.PlayerData.citizenid})
-                
-            print("^2[DEBUG POSICION] Coordenadas inyectadas y forzadas en SQL con éxito.^7")
         else
-            print("^1[DEBUG POSICION] ¡ALERTA! El cliente estaba en la sala oculta. IGNORANDO GUARDADO.^7")
+            print("^3[LOGOUT] Jugador en sala oculta. Conservando última posición real.^7")
         end
 
-        local license = QBCore.Functions.GetIdentifier(src, 'license')
-        if license then
-            InvalidateCharacterCache(license)
-        end
+        -- 🔥 3. GUARDADO COMPLETO DEL PERSONAJE 🔥
+        -- Esto fuerza a QBCore a guardar Inventario, Metadatos, Trabajos, Dinero, etc.
+        Player.Functions.Save()
 
+        -- 4. Cerramos sesión y mandamos al selector
         QBCore.Player.Logout(src)
-        Wait(800) -- Damos tiempo extra a la base de datos
+        Wait(800)
         TriggerClientEvent('DP-MultiCharacter:client:chooseChar', src)
     end
 end)
+
+-- Evento para forzar la recarga de personajes cuando el jugador vuelve del mapa
+RegisterNetEvent('DP-MultiCharacter:server:refreshCharacters', function()
+    local src = source
+    local license = QBCore.Functions.GetIdentifier(src, 'license')
+    if license then
+        -- Invalidamos la caché para que la próxima petición traiga datos frescos
+        InvalidateCharacterCache(license)
+    end
+end)
+
+function SavePlayerPosition(src)
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then
+        return
+    end
+
+    local ped = GetPlayerPed(src)
+    if ped and ped ~= 0 then
+        local pos = GetEntityCoords(ped)
+        local heading = GetEntityHeading(ped)
+
+        -- 🛑 ESCUDO ANTI-SALA OCULTA Y ANTI-VACÍO
+        local distToHidden = #(vector3(pos.x, pos.y, pos.z) -
+                                 vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
+        local isDeadOrVoid = (pos.z < -10.0) or (pos.x == 0.0 and pos.y == 0.0)
+
+        if distToHidden > 50.0 and not isDeadOrVoid then
+            local safePosition = {
+                x = pos.x,
+                y = pos.y,
+                z = pos.z,
+                w = heading
+            }
+            Player.PlayerData.position = safePosition
+            Player.Functions.SetPlayerData("position", Player.PlayerData.position)
+
+            MySQL.update.await('UPDATE players SET position = ?, last_updated = CURRENT_TIMESTAMP WHERE citizenid = ?',
+                {json.encode(safePosition), Player.PlayerData.citizenid})
+        else
+            print("^3[POSICIÓN] Ignorando guardado: El jugador está en la sala oculta o en el vacío.^7")
+        end
+    end
+end
+
+-- Guardar posición al desconectar
+AddEventHandler('playerDropped', function()
+    SavePlayerPosition(source)
+end)
+
+-- 🛑 ESCUDO ANTI-GUARDADO DE QBCORE EN LA SALA OCULTA
+AddEventHandler('QBCore:Server:OnPlayerUnload', function(src)
+    if isSelectingChar[src] then
+        local Player = QBCore.Functions.GetPlayer(src)
+        if Player then
+            -- Forzamos a QBCore a no guardar la posición actual
+            Player.Functions.SetPlayerData("position", Player.PlayerData.position)
+        end
+    end
+end)
+
+CreateThread(function()
+    while true do
+        Wait(2000) -- Cada 2 segundos
+        for src, isInMenu in pairs(isSelectingChar) do
+            if isInMenu then
+                local Player = QBCore.Functions.GetPlayer(src)
+                if Player then
+                    -- Si está en el menú, le forzamos la posición del casino/aeropuerto en memoria
+                    -- para que si QBCore guarda, guarde la posición real, no la de la sala oculta.
+                    -- (Puedes cambiar esto por la posición que tú quieras).
+                    local safePos = {
+                        x = -1046.02,
+                        y = -2751.97,
+                        z = 21.36,
+                        w = 326.05
+                    }
+                    Player.PlayerData.position = safePos
+                end
+            end
+        end
+    end
+end)
+
+-- 🛑 GUARDADO AUTOMÁTICO DE SALUD CADA 5 MINUTOS (POR SI SE CAE) - ELIMINADO PORQUE GUARDA LA SALA OCULTA
+--[[ 
+CreateThread(function()
+    while true do
+        Wait(5 * 60 * 1000) -- 5 minutos
+        for _, src in ipairs(GetPlayers()) do
+            local Player = QBCore.Functions.GetPlayer(tonumber(src))
+            if Player then
+                local ped = GetPlayerPed(src)
+                if ped and ped ~= 0 then
+                    local health = GetEntityHealth(ped)
+                    local armor = GetPedArmour(ped)
+                    MySQL.update.await('UPDATE players SET health = ?, armor = ? WHERE citizenid = ?',
+                        {health, armor, Player.PlayerData.citizenid})
+                end
+            end
+        end
+    end
+end)
+]]

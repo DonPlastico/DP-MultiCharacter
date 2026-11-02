@@ -79,7 +79,7 @@ Config.CharactersAnimation = {
 }
 
 Config.SpawnPoints = {
-    SkipSelection = true, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos
+    SkipSelection = false, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos
     DefaultSpawn = vector4(-1046.02, -2751.97, 21.36, 326.05), -- Spawn de emergencia
 
     -- Habilita la opción "Última ubicación" como primera tarjeta del carrusel
@@ -90,34 +90,144 @@ Config.SpawnPoints = {
     -- alguna, aparecen como tarjetas adicionales en el carrusel ("Mi casa: <dirección>").
     EnableHouses = true,
 
-    -- Integración con apartamentos (qb-apartments). Solo se ofrece al CREAR un
-    -- personaje nuevo, nunca a uno ya existente. Si el jugador aún no tiene apartamento
-    -- y Config.SpawnPoints.ApartmentsStarting es true, el carrusel muestra los
-    -- apartamentos disponibles para elegir uno como parte de la creación del personaje.
+    -- Integración con apartamentos (qb-apartments) al CREAR un personaje nuevo.
+    -- Si ApartmentsStarting = true, el carrusel muestra los apartamentos disponibles
+    -- para elegir uno como parte de la creación del personaje.
     EnableApartments = true,
     ApartmentsStarting = true,
 
-    -- Puntos de spawn fijos, mostrados como tarjetas con foto en el carrusel.
-    {
-        label = "spawn_paleto_label",
-        description = "spawn_paleto_description",
-        image = "img/spawns/Paleto.png",
-        coords = vector4(-247.0, 6330.0, 32.50, 225.0)
-    },
+    -- Mostrar en el MAPA del selector de spawn los apartamentos que YA POSEE
+    -- el personaje seleccionado (integración con qb-apartments + DP-PauseMenu).
+    -- Esto es independiente de ApartmentsStarting (que es solo para creación).
+    ShowOwnedApartmentsOnMap = true,
 
-    {
-        label = "spawn_airport_label",
-        description = "spawn_airport_description",
-        image = "img/spawns/Airport.png",
-        coords = vector4(-1046.02, -2751.97, 21.36, 326.05)
-    },
-
-    {
-        label = "spawn_sandy_label",
-        description = "spawn_sandy_description",
-        image = "img/spawns/Sandy.png",
-        coords = vector4(1839.0, 3672.0, 34.28, 206.35)
-    }
+    -- ==========================================
+    -- BLIPS DINÁMICOS DE SPAWN (GLOBALES)
+    -- ==========================================
+    -- Aquí puedes añadir todos los puntos que quieras. Aparecerán en el mapa
+    -- en una categoría separada ("PUNTOS DE SPAWN") cuando un jugador existente
+    -- vaya a elegir dónde aparecer.
+    DynamicSpawnBlips = {{
+        name = "mrpd",
+        label = "Comisaría Central (MRPD)",
+        icon = "radar_police_station", -- Comisaría
+        info = "Comisaría de policía principal de Los Santos.",
+        coord = vector4(411.63, -966.19, 29.47, 226.55)
+    }, {
+        name = "pillbox",
+        label = "Hospital Pillbox",
+        icon = "radar_hospital", -- Hospital
+        info = "Hospital principal de la ciudad, ideal para empezar.",
+        coord = vector4(246.86, -567.63, 43.28, 242.27)
+    }, {
+        name = "airport",
+        label = "Aeropuerto LSIA",
+        icon = "radar_plane_drop", -- Icono de avión (más original que el de escuela)
+        info = "Aeropuerto Internacional de Los Santos.",
+        coord = vector4(-1038.0, -2738.0, 20.0, 330.0)
+    }, {
+        name = "paleto",
+        label = "Paleto Bay Motel",
+        icon = "radar_motel", -- Icono de motel (o usa "radar_safehouse")
+        info = "Motel en la pintoresca zona de Paleto Bay.",
+        coord = vector4(-106.0, 6314.0, 31.0, 136.0)
+    }, {
+        name = "sandy",
+        label = "Sandy Shores House",
+        icon = "radar_safehouse", -- Casa segura
+        info = "Pequeña casa en la tranquilidad de Sandy Shores.",
+        coord = vector4(1784.0, 3646.0, 34.0, 300.0)
+    }, {
+        name = "bennys",
+        label = "Taller Bennys",
+        icon = "radar_bennys", -- Icono exclusivo de Bennys
+        info = "Taller de modificaciones de vehículos Bennys.",
+        coord = vector4(-184.34, -1295.03, 31.3, 127.36)
+    }, {
+        name = "legion",
+        label = "Legion Square",
+        icon = "radar_centre", -- Centro de la ciudad
+        info = "El centro neurálgico de la ciudad, siempre lleno de gente.",
+        coord = vector4(223.5, -867.02, 30.49, 11.52)
+    }, {
+        name = "jobcenter",
+        label = "Centro de Trabajo",
+        icon = "radar_business", -- Icono de negocios
+        info = "Oficina de empleo para encontrar tu próximo trabajo.",
+        coord = vector4(-257.46, -981.22, 31.22, 26.14)
+    }, {
+        name = "cityhall",
+        label = "Ayuntamiento",
+        icon = "radar_government", -- Si no lo tienes, usa "radar_poi"
+        info = "Edificio consistorial de la ciudad de Los Santos.",
+        coord = vector4(-537.59, -217.2, 37.65, 20.88)
+    }, {
+        name = "garage_paleto",
+        label = "Garaje Paleto",
+        icon = "radar_garage", -- Icono de garaje
+        info = "Garaje público en la zona norte de Paleto.",
+        coord = vector4(126.39, 6625.41, 31.79, 232.79)
+    }, {
+        name = "sandyshore",
+        label = "Aeródromo Sandy",
+        icon = "radar_flight_school", -- Escuela de vuelo
+        info = "Pequeña pista de aterrizaje en Sandy Shores.",
+        coord = vector4(1747.18, 3274.98, 41.12, 65.92)
+    }, {
+        name = "pier",
+        label = "Noria del Pier",
+        icon = "radar_fairground", -- Icono de parque de atracciones
+        info = "El famoso muelle de Santa Mónica, zona de ocio.",
+        coord = vector4(-1661.91, -1126.93, 13.0, 140.0)
+    }, {
+        name = "casino",
+        label = "Casino Diamond",
+        icon = "radar_casino", -- Icono de casino
+        info = "El Diamond Casino & Resort, zona de lujo y apuestas.",
+        coord = vector4(925.0, 46.0, 81.0, 60.0)
+    }, {
+        name = "gym",
+        label = "Gimnasio",
+        icon = "radar_gym", -- Si no lo tienes, usa "radar_activities"
+        info = "Gimnasio de Los Santos, para ponerte en forma.",
+        coord = vector4(-1218.0, -349.0, 37.0, 110.0)
+    }, {
+        name = "lscustoms",
+        label = "LS Customs",
+        icon = "radar_car_mod_shop", -- Tienda de mods
+        info = "Taller de personalización de vehículos más famoso.",
+        coord = vector4(-373.0, -112.0, 38.0, 180.0)
+    }, {
+        name = "tequilala",
+        label = "Tequilala",
+        icon = "radar_bar", -- Icono de bar
+        info = "Bar y discoteca de ambiente latino.",
+        coord = vector4(-565.0, 276.0, 83.0, 180.0)
+    }, {
+        name = "vanilla",
+        label = "Vanilla Unicorn",
+        icon = "radar_strip_club", -- Club nocturno
+        info = "El club nocturno más famoso de la ciudad.",
+        coord = vector4(129.36, -1280.32, 29.27, 210.0)
+    }, {
+        name = "beach",
+        label = "Playa Vespucci",
+        icon = "radar_beach", -- Si no lo tienes, usa "radar_activities"
+        info = "La playa de Vespucci, perfecta para pasear.",
+        coord = vector4(-1277.0, -1421.0, 4.0, 140.0)
+    }, {
+        name = "observatory",
+        label = "Observatorio",
+        icon = "radar_poi", -- Punto de interés
+        info = "El observatorio Galileo, con vistas a toda la ciudad.",
+        coord = vector4(-438.0, 1076.0, 352.0, 180.0)
+    }, {
+        name = "vinewood",
+        label = "Cartel de Vinewood",
+        icon = "radar_vinewood_tours", -- Icono de tours de Vinewood
+        info = "El famoso cartel de Hollywood en Vinewood Hills.",
+        coord = vector4(715.0, 1193.0, 350.0, 200.0)
+    }}
 }
 
 -- Ítems extras que el jugador puede comprar al crear un personaje.

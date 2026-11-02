@@ -81,3 +81,129 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:getOwnedHouses', funct
     DebugPrint("Casas encontradas: " .. tostring(#houses))
     cb(houses)
 end)
+
+-- ==========================================
+-- 🏢 APARTAMENTOS PROPIOS DEL JUGADOR (qb-apartments)
+-- ==========================================
+-- Mismo patrón que getOwnedHouses: consulta directa a la tabla `apartments`
+-- de qb-apartments y cruce con el Config.Apartments.Locations para obtener
+-- la label y las coordenadas de entrada de cada apartamento.
+QBCore.Functions.CreateCallback('DP-MultiCharacter:server:getOwnedApartments', function(_, cb, cid)
+    if not Config.SpawnPoints.ShowOwnedApartmentsOnMap then
+        DebugPrint("ShowOwnedApartmentsOnMap está desactivado en el config. Devolviendo lista vacía.")
+        cb({})
+        return
+    end
+
+    if not cid then
+        DebugPrint("getOwnedApartments llamado sin citizenid. Devolviendo lista vacía.")
+        cb({})
+        return
+    end
+
+    if GetResourceState('qb-apartments') ~= 'started' then
+        DebugPrint("qb-apartments no está iniciado. Devolviendo lista vacía.")
+        cb({})
+        return
+    end
+
+    DebugPrint("Consultando apartamentos propios para el citizenid: " .. tostring(cid))
+    -- OJO: ahora seleccionamos también type y label
+    local ok, rows = pcall(MySQL.query.await, [[
+        SELECT name, type, label
+        FROM apartments
+        WHERE citizenid = ?
+    ]], {cid})
+
+    if not ok then
+        DebugPrint("ERROR consultando apartamentos: " .. tostring(rows))
+        cb({})
+        return
+    end
+
+    if not rows or not rows[1] then
+        DebugPrint("Sin apartamentos encontrados para este citizenid.")
+        cb({})
+        return
+    end
+
+    -- Cargar la config de qb-apartments (LoadResourceFile)
+    local locations = {}
+    local okCfg, cfgResult = pcall(function()
+        local raw = LoadResourceFile('qb-apartments', 'config.lua')
+        if not raw then
+            return nil
+        end
+        local fn, err = load(raw .. '\nreturn Apartments', 'qb-apartments/config.lua', 't')
+        if not fn then
+            return nil
+        end
+        return fn()
+    end)
+
+    if okCfg and type(cfgResult) == 'table' and type(cfgResult.Locations) == 'table' then
+        locations = cfgResult.Locations
+    else
+        DebugPrint("No se pudo cargar Apartments.Locations de qb-apartments.")
+        cb({})
+        return
+    end
+
+    local apartments = {}
+    for i = 1, #rows do
+        local row = rows[i]
+        local aptType = row.type -- ← CLAVE: usar 'type', no 'name'
+        local loc = locations[aptType]
+
+        DebugPrint(("Procesando apartamento: name=%s, type=%s, label=%s → loc encontrada=%s"):format(
+            tostring(row.name), tostring(row.type), tostring(row.label), tostring(loc ~= nil)))
+
+        if loc and loc.coords and loc.coords.enter then
+            local enter = loc.coords.enter
+            apartments[#apartments + 1] = {
+                name = row.name, -- apartamento54023 (ID único)
+                label = row.label or loc.label or row.name, -- Fantastic Plaza 4023 (bonito)
+                x = enter.x,
+                y = enter.y,
+                z = enter.z
+            }
+        else
+            DebugPrint("Apartamento '" .. tostring(aptType) .. "' sin entrada en Apartments.Locations. Se omite.")
+        end
+    end
+
+    DebugPrint("Apartamentos encontrados: " .. tostring(#apartments))
+    cb(apartments)
+end)
+
+QBCore.Functions.CreateCallback('DP-MultiCharacter:server:getLastLocation', function(_, cb, cid)
+    if not cid then
+        cb(nil);
+        return
+    end
+
+    local ok, row = pcall(MySQL.query.await, 'SELECT position FROM players WHERE citizenid = ?', {cid})
+    if ok and row and row[1] then
+        local decoded = json.decode(row[1].position)
+        if decoded and decoded.x then
+            -- 🛑 FILTRO ANTI-SALA OCULTA
+            local distToHidden =
+                #(vector2(decoded.x, decoded.y) - vector2(Config.HiddenCoords.x, Config.HiddenCoords.y))
+
+            if distToHidden < 50.0 or decoded.z < -50.0 then
+                -- Devolvemos el aeropuerto para que el mapa no se rompa
+                cb({
+                    x = Config.SpawnPoints.DefaultSpawn.x,
+                    y = Config.SpawnPoints.DefaultSpawn.y,
+                    z = Config.SpawnPoints.DefaultSpawn.z
+                })
+                return
+            end
+
+            -- Si es válida, la enviamos
+            cb(decoded)
+            return
+        end
+    end
+    cb(nil)
+end)

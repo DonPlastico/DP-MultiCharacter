@@ -50,7 +50,7 @@ QBCore.Functions.CreateCallback('DP-MultiCharacter:server:setupCharacters', func
     maxSlots = math.max(MIN_SLOTS, math.min(MAX_SLOTS, math.floor(configuredSlots)))
 
     MySQL.query(
-        'SELECT p.*, s.model, s.skin FROM players p LEFT JOIN playerskins s ON p.citizenid = s.citizenid AND s.active = 1 WHERE p.license = ? ORDER BY p.cid ASC',
+        'SELECT p.*, s.model, s.skin FROM players p LEFT JOIN playerskins s ON p.citizenid = s.citizenid AND s.active = 1 WHERE p.license = ? ORDER BY p.last_updated DESC',
         {license}, function(result)
             for i = 1, (#result), 1 do
                 result[i].charinfo = json.decode(result[i].charinfo)

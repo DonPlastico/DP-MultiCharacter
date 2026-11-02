@@ -5077,15 +5077,3 @@ span.flatpickr-weekday {
 .spawn-select-btn:active:not(:disabled) {
     transform: translateY(0);
 }
-
-/* Responsive: tarjetas algo más pequeñas en pantallas estrechas */
-@media (max-width: 768px) {
-    .spawn-card {
-        flex: 0 0 200px;
-        height: 280px;
-    }
-
-    .spawn-select-title {
-        font-size: 24px;
-    }
-}

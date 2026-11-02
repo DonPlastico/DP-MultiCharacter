@@ -1,314 +1,240 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 
--- ==========================================
--- 🛠️ FUNCIÓN DE DEPURACIÓN (DEBUG)
--- ==========================================
 local function DebugPrint(msg)
     if Config.Debug then
         print("^5[DP-MultiCharacter:Spawn Debug] ^7" .. msg)
     end
 end
 
--- ==========================================
--- 🎥 CÁMARA INDEPENDIENTE DEL SELECTOR DE SPAWN
--- ==========================================
--- Cámara propia y separada de la del selector de personajes (esta se abre DESPUÉS,
--- cuando el jugador ya está listo para entrar al mundo, tal y como hacía qb-spawn
--- con sus propias variables 'cam'/'cam2').
-local spawnCam = nil
-local spawnCam2 = nil
-local choosingSpawn = false
-local currentHouses = {} -- Casas del jugador cacheadas para esta sesión de selección
-local currentApartments = {} -- Apartamentos disponibles (solo en modo creación de personaje)
-local pendingCData = nil -- Datos del personaje que se está a punto de spawnear
-local isNewCharacterFlow = false -- true = viene de crear personaje nuevo (permite apartamentos)
-
--- Misma proporción de altura/ángulo que usaba qb-spawn originalmente
-local CAM_HIGH_Z = 1500
-local CAM_CLOSE_Z = 50
-local CAM_POINT_AT_HIGH = 75
-local CAM_POINT_AT_CLOSE = 0
-local CAM_TRANSITION_1 = 500
-local CAM_TRANSITION_2 = 1000
+-- Datos del personaje pendiente de spawnear (los rellena cl_main.lua / cl_events.lua)
+pendingCData = nil
+isNewCharacterFlow = false
 
 -- ==========================================
--- 🖥️ MOSTRAR / OCULTAR LA UI DEL SELECTOR
+-- 🎥 CÁMARA Y ESTADO DEL JUGADOR DURANTE EL SELECTOR
 -- ==========================================
-local function SetSpawnUIDisplay(visible)
-    choosingSpawn = visible
-    SetNuiFocus(visible, visible)
-    SendNUIMessage({
-        action = 'spawnToggleUI',
-        status = visible,
-        translations = GetTranslations()
-    })
-end
+-- Mientras el jugador está en el mapa de DP-PauseMenu, lo dejamos congelado e invisible
+-- para que no se caiga ni interactúe con el mundo real. El mapa en sí lo abre el otro script.
 
--- Cámara general alta, apuntando hacia la posición actual del jugador (vista de conjunto)
-local function OpenSpawnCamera()
+local function FreezePlayerForSpawn()
     local ped = PlayerPedId()
-    local pos = GetEntityCoords(ped)
-
+    FreezeEntityPosition(ped, true)
+    SetEntityInvincible(ped, true)
     SetEntityVisible(ped, false, false)
-    DoScreenFadeOut(250)
-    Wait(1000)
-    DoScreenFadeIn(250)
+    SetPlayerControl(PlayerId(), false, 0)
 
-    spawnCam = CreateCamWithParams('DEFAULT_SCRIPTED_CAMERA', pos.x, pos.y, pos.z + CAM_HIGH_Z, -85.0, 0.0, 0.0, 100.0,
-        false, 0)
-    SetCamActive(spawnCam, true)
-    RenderScriptCams(true, false, 1, true, true)
+    -- 🛑 ELIMINADO: No creamos cámara propia aquí.
+    -- DP-PauseMenu abrirá su UI a pantalla completa y tapará todo.
+    -- Si dejamos la cámara del garaje, veremos la pared gris encima del mapa.
 end
 
--- Mueve la cámara con interpolación de 2 fases hacia unas coordenadas concretas
--- (misma lógica que el SetCam original de qb-spawn: primero un plano alto, luego uno cercano)
-local function MoveSpawnCameraTo(coords)
-    if DoesCamExist(spawnCam2) then
-        DestroyCam(spawnCam2, true)
-    end
-
-    spawnCam2 = CreateCamWithParams('DEFAULT_SCRIPTED_CAMERA', coords.x, coords.y, coords.z + CAM_HIGH_Z, 300.0, 0.0,
-        0.0, 110.0, false, 0)
-    PointCamAtCoord(spawnCam2, coords.x, coords.y, coords.z + CAM_POINT_AT_HIGH)
-    SetCamActiveWithInterp(spawnCam2, spawnCam, CAM_TRANSITION_1, true, true)
-    if DoesCamExist(spawnCam) then
-        DestroyCam(spawnCam, true)
-    end
-    Wait(CAM_TRANSITION_1)
-
-    spawnCam = CreateCamWithParams('DEFAULT_SCRIPTED_CAMERA', coords.x, coords.y, coords.z + CAM_CLOSE_Z, 300.0, 0.0,
-        0.0, 110.0, false, 0)
-    PointCamAtCoord(spawnCam, coords.x, coords.y, coords.z + CAM_POINT_AT_CLOSE)
-    SetCamActiveWithInterp(spawnCam, spawnCam2, CAM_TRANSITION_2, true, true)
-end
-
-local function DestroySpawnCameras()
-    if DoesCamExist(spawnCam) then
-        SetCamActive(spawnCam, false)
-        DestroyCam(spawnCam, true)
-        spawnCam = nil
-    end
-    if DoesCamExist(spawnCam2) then
-        SetCamActive(spawnCam2, false)
-        DestroyCam(spawnCam2, true)
-        spawnCam2 = nil
-    end
-    RenderScriptCams(false, true, 500, true, true)
-end
-
--- ==========================================
--- 🧍 PRE/POST SPAWN (fundido de pantalla + limpieza de cámara)
--- ==========================================
-local function PreSpawnPlayer()
-    SetSpawnUIDisplay(false)
-    DoScreenFadeOut(500)
-    Wait(1500)
-end
-
-local function PostSpawnPlayer()
+local function UnfreezePlayerAfterSpawn()
     local ped = PlayerPedId()
     FreezeEntityPosition(ped, false)
-    DestroySpawnCameras()
+    SetEntityInvincible(ped, false)
     SetEntityVisible(ped, true, false)
-    Wait(500)
-    DoScreenFadeIn(250)
+    SetPlayerControl(PlayerId(), true, 0)
 end
 
 -- ==========================================
--- 🚪 PUNTO DE ENTRADA: abrir el selector de spawn
+-- 🚪 PUNTO DE ENTRADA DEL SELECTOR DE SPAWN
 -- ==========================================
--- newCharacter: true si viene de crear un personaje nuevo (habilita apartamentos)
--- apartments: lista de apartamentos disponibles a ofrecer (solo si newCharacter y Config lo permite)
-RegisterNetEvent('DP-MultiCharacter:client:setupSpawns', function(cData, newCharacter, apartments)
-    DebugPrint("setupSpawns recibido. Personaje nuevo: " .. tostring(newCharacter))
-    pendingCData = cData
-    isNewCharacterFlow = newCharacter or false
-    currentApartments = apartments or {}
-
-    if newCharacter and Config.SpawnPoints.EnableApartments then
-        SendNUIMessage({
-            action = 'spawnSetupApartments',
-            locations = currentApartments,
-            isNew = true
-        })
-    else
-        -- Pedimos las casas propias al servidor (si la integración está activa)
-        if Config.SpawnPoints.EnableHouses then
-            QBCore.Functions.TriggerCallback('DP-MultiCharacter:server:getOwnedHouses', function(houses)
-                currentHouses = houses or {}
-                SendNUIMessage({
-                    action = 'spawnSetupLocations',
-                    locations = Config.SpawnPoints,
-                    houses = currentHouses,
-                    enableLastLocation = Config.SpawnPoints.EnableLastLocation and not newCharacter,
-                    isNew = newCharacter or false
-                })
-            end, cData.citizenid)
-        else
-            currentHouses = {}
-            SendNUIMessage({
-                action = 'spawnSetupLocations',
-                locations = Config.SpawnPoints,
-                houses = {},
-                enableLastLocation = Config.SpawnPoints.EnableLastLocation and not newCharacter,
-                isNew = newCharacter or false
-            })
-        end
-    end
-end)
-
+-- Este evento lo dispara DP-MultiCharacter cuando el jugador ha elegido personaje
+-- (o ha terminado de crearlo) y necesita elegir dónde aparecer.
 RegisterNetEvent('DP-MultiCharacter:client:openSpawnUI', function()
-    DebugPrint("openSpawnUI recibido. Abriendo cámara y UI del selector.")
-    OpenSpawnCamera()
-    Wait(500)
-    SetSpawnUIDisplay(true)
-end)
+    DoScreenFadeOut(300)
+    while not IsScreenFadedOut() do
+        Wait(0)
+    end
 
--- ==========================================
--- 🔌 NUI CALLBACKS
--- ==========================================
-RegisterNUICallback('spawnExit', function(_, cb)
-    SetNuiFocus(false, false)
     SendNUIMessage({
         action = 'spawnToggleUI',
         status = false
     })
-    choosingSpawn = false
-    cb('ok')
-end)
 
--- El jugador pasa el cursor/selecciona una tarjeta: movemos la cámara hacia ese punto
-RegisterNUICallback('spawnPreviewLocation', function(data, cb)
-    local locType = tostring(data.type)
-    local locId = tostring(data.id)
+    SetNuiFocus(false, false)
+    FreezePlayerForSpawn()
 
-    DoScreenFadeOut(200)
-    Wait(500)
-    DoScreenFadeIn(200)
+    local citizenid = pendingCData and pendingCData.citizenid or nil
 
-    if locType == 'current' then
-        local decodedPos = DecodePosition(pendingCData.position)
-        if decodedPos and decodedPos.x then
-            local distMenu = #(vector3(decodedPos.x, decodedPos.y, decodedPos.z) -
-                                 vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
-            if distMenu < 50.0 then
-                MoveSpawnCameraTo(Config.SpawnPoints.DefaultSpawn)
+    local function OpenMapWithData(apartments, lastLocation)
+        apartments = apartments or {}
+
+        local success, err = pcall(function()
+            if exports['DP-PauseMenu'] and exports['DP-PauseMenu'].OpenSpawnSelectorWithApartments then
+                local locToSend = nil
+                if Config.SpawnPoints.EnableLastLocation then
+                    locToSend = lastLocation
+                end
+
+                -- 👇 PASAMOS Config.SpawnPoints.EnableApartments COMO 6º ARGUMENTO 👇
+                exports['DP-PauseMenu']:OpenSpawnSelectorWithApartments(function(coords)
+                    HandleSpawnSelectionResult(coords)
+                end, apartments, Config.SpawnPoints.DynamicSpawnBlips, locToSend, Config.SpawnPoints.EnableLastLocation,
+                    Config.SpawnPoints.EnableApartments)
             else
-                MoveSpawnCameraTo(vector3(decodedPos.x, decodedPos.y, decodedPos.z))
+                DebugPrint("Export OpenSpawnSelectorWithApartments no disponible. Usando el clásico sin apartamentos.")
+                exports['DP-PauseMenu']:OpenSpawnSelector(function(coords)
+                    HandleSpawnSelectionResult(coords)
+                end)
             end
-        else
-            MoveSpawnCameraTo(Config.SpawnPoints.DefaultSpawn)
-        end
-    elseif locType == 'house' then
-        local house = currentHouses[tonumber(locId)]
-        if house and house.coords then
-            MoveSpawnCameraTo(house.coords.enter or house.coords)
-        end
-    elseif locType == 'apartment' then
-        local apt = currentApartments[locId]
-        if apt and apt.coords then
-            MoveSpawnCameraTo(apt.coords.enter or apt.coords)
-        end
-    else
-        local point = Config.SpawnPoints[tonumber(locId)]
-        if point and point.coords then
-            MoveSpawnCameraTo(point.coords)
+        end)
+
+        if not success then
+            DebugPrint("Error abriendo el selector de spawn: " .. tostring(err))
+            UnfreezePlayerAfterSpawn()
+            TriggerEvent('DP-MultiCharacter:client:spawnLastLocation', Config.SpawnPoints.DefaultSpawn, pendingCData)
         end
     end
-    cb('ok')
+
+    if citizenid then
+        QBCore.Functions.TriggerCallback('DP-MultiCharacter:server:getOwnedApartments', function(apartments)
+
+            -- ¡NUEVO! Ya no consultamos la BD de nuevo. 
+            -- Usamos pendingCData que tiene la posición original intacta.
+            local lastLoc = nil
+            if pendingCData and pendingCData.position then
+                local posType = type(pendingCData.position)
+
+                -- Decodificamos dependiendo de si viene en string (JSON) o ya es tabla
+                if posType == 'string' then
+                    lastLoc = json.decode(pendingCData.position)
+                elseif posType == 'table' then
+                    lastLoc = pendingCData.position
+                end
+
+                -- Mantenemos tu SEGURO aquí en el cliente por precaución
+                if lastLoc and lastLoc.x and lastLoc.y then
+                    local dist =
+                        #(vector2(lastLoc.x, lastLoc.y) - vector2(Config.HiddenCoords.x, Config.HiddenCoords.y))
+                    if dist < 50.0 or (lastLoc.z and lastLoc.z < -50.0) then
+                        lastLoc = {
+                            x = Config.SpawnPoints.DefaultSpawn.x,
+                            y = Config.SpawnPoints.DefaultSpawn.y,
+                            z = Config.SpawnPoints.DefaultSpawn.z
+                        }
+                    end
+                end
+            end
+
+            OpenMapWithData(apartments, lastLoc)
+
+        end, citizenid)
+    else
+        DebugPrint("openSpawnUI sin pendingCData.citizenid. Abriendo mapa sin apartamentos.")
+        OpenMapWithData({}, nil)
+    end
 end)
 
--- Confirmación final: el jugador elige "Empezar aquí"
-RegisterNUICallback('spawnConfirm', function(data, cb)
-    local locType = tostring(data.type)
-    local locId = tostring(data.id)
-    local ped = PlayerPedId()
-
-    if locType == 'apartment' then
-        local apt = currentApartments[locId]
-        SetSpawnUIDisplay(false)
-        DoScreenFadeOut(500)
-        Wait(1500)
-        DestroySpawnCameras()
-        TriggerServerEvent('apartments:server:CreateApartment', locId, apt and apt.label or nil, true)
-        TriggerServerEvent('QBCore:Server:OnPlayerLoaded')
-        TriggerEvent('QBCore:Client:OnPlayerLoaded')
-        FreezeEntityPosition(ped, false)
-        SetEntityVisible(ped, true, false)
-        Wait(500)
-        DoScreenFadeIn(250)
-        cb('ok')
-        return
-    end
-
-    SetSpawnUIDisplay(false)
-
-    -- Determinar destino exacto basado en la elección del UI
-    local targetCoords = Config.SpawnPoints.DefaultSpawn
-    if locType == 'current' then
-        local decodedPos = DecodePosition(pendingCData.position)
-        if decodedPos and decodedPos.x then
-            local distMenu = #(vector3(decodedPos.x, decodedPos.y, decodedPos.z) -
-                                 vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
-            if distMenu > 50.0 then
-                targetCoords = decodedPos
-            end
-        end
-    elseif locType == 'house' then
-        local house = currentHouses[tonumber(locId)]
-        if house and house.coords then
-            targetCoords = house.coords.enter or house.coords
-        end
-    else
-        local point = Config.SpawnPoints[tonumber(locId)]
-        if point and point.coords then
-            targetCoords = point.coords
-        end
-    end
-
-    DestroySpawnCameras()
-    TriggerEvent('DP-MultiCharacter:client:spawnLastLocation', targetCoords, pendingCData)
-
-    if locType == 'house' then
-        local house = currentHouses[tonumber(locId)]
-        if house and house.house then
-            TriggerEvent('qb-houses:client:enterOwnedHouse', house.house)
-        end
-    end
-    TriggerServerEvent('qb-houses:server:SetInsideMeta', 0, false)
-    TriggerServerEvent('qb-apartments:server:SetInsideMeta', 0, 0, false)
-
-    if locType ~= 'apartment' and isNewCharacterFlow then
-        Wait(1000)
-        TriggerEvent('qb-clothing:client:CreateFirstCharacter')
-    end
-
-    cb('ok')
-end)
-
--- ==========================================
--- 🚫 BLOQUEO DE CONTROLES MIENTRAS EL SELECTOR ESTÁ ABIERTO
--- ==========================================
-CreateThread(function()
-    while true do
-        if choosingSpawn then
-            DisableAllControlActions(0)
+-- Callback común para procesar el resultado del mapa (extraído para no duplicar lógica)
+function HandleSpawnSelectionResult(coords)
+    if not IsScreenFadedOut() then
+        DoScreenFadeOut(300)
+        while not IsScreenFadedOut() do
             Wait(0)
-        else
-            Wait(1000)
         end
     end
+
+    if coords and coords.x and coords.y then
+        local targetCoords = vector4(coords.x, coords.y, coords.z or 0.0, 0.0)
+        UnfreezePlayerAfterSpawn()
+        TriggerEvent('DP-MultiCharacter:client:spawnLastLocation', targetCoords, pendingCData)
+        if isNewCharacterFlow then
+            Wait(1000)
+            TriggerEvent('DP-MultiCharacter:client:openClothing')
+        end
+    else
+        UnfreezePlayerAfterSpawn()
+        TriggerEvent('DP-MultiCharacter:client:spawnLastLocation', Config.SpawnPoints.DefaultSpawn, pendingCData)
+        if isNewCharacterFlow then
+            Wait(1000)
+            TriggerEvent('DP-MultiCharacter:client:openClothing')
+        end
+    end
+end
+
+-- =====================================================================
+-- 🛑 CANCELACIÓN DEL SELECTOR DE SPAWN (VOLVER AL MULTICHARACTER)
+-- =====================================================================
+RegisterNetEvent('DP-PauseMenu:spawnCancelled', function()
+    -- Descongelamos al jugador para que pueda interactuar con el menú del multicharacter
+    local ped = PlayerPedId()
+    FreezeEntityPosition(ped, false)
+    SetEntityInvincible(ped, false)
+    SetEntityVisible(ped, false, false) -- Lo dejamos invisible para la cámara del multichar
+    SetPlayerControl(PlayerId(), true, 0)
+
+    -- Le devolvemos el foco a la interfaz del MultiCharacter
+    SetNuiFocus(true, true)
+
+    -- Enviamos la orden a la UI de que se vuelva a mostrar
+    SendNUIMessage({
+        action = "toggleUI",
+        state = true
+    })
+
+    -- Si el jugador estaba en mitad de la selección, volvemos a pedir los personajes para que se vea la lista actualizada
+    TriggerServerEvent('DP-MultiCharacter:server:refreshCharacters')
+
+    Wait(400)
+    DoScreenFadeIn(500)
 end)
 
 -- ==========================================
--- 🧹 LIMPIEZA AL DETENER/REINICIAR EL RECURSO
+-- 🧹 LIMPIEZA AL DETENER EL RECURSO
 -- ==========================================
 AddEventHandler('onResourceStop', function(resourceName)
     if GetCurrentResourceName() ~= resourceName then
         return
     end
-    DestroySpawnCameras()
-    DisplayHud(true)
-    DisplayRadar(true)
-    FreezeEntityPosition(PlayerPedId(), false)
+    local ped = PlayerPedId()
+    FreezeEntityPosition(ped, false)
+    SetEntityInvincible(ped, false)
+    SetEntityVisible(ped, true, false)
+    SetPlayerControl(PlayerId(), true, 0)
+end)
+
+-- =====================================================================
+-- 🛡️ SISTEMA DE EMERGENCIA ANTI-ATASCOS (REINICIO DE SCRIPT)
+-- =====================================================================
+AddEventHandler('onResourceStop', function(resourceName)
+    if GetCurrentResourceName() ~= resourceName then
+        return
+    end
+
+    -- Si el script se para mientras estamos en el flujo de spawn (congelados)
+    if pendingCData then
+        local ped = PlayerPedId()
+
+        -- Restauramos el estado del jugador
+        FreezeEntityPosition(ped, false)
+        SetEntityInvincible(ped, false)
+        SetEntityVisible(ped, true, false)
+        SetPlayerControl(PlayerId(), true, 0)
+
+        -- 🛑 TELETRANSPORTE DE EMERGENCIA AL SPAWN POR DEFECTO DEL MULTICHARACTER
+        local defaultSpawn = Config.SpawnPoints.DefaultSpawn or vector4(-1046.02, -2751.97, 21.36, 326.05)
+
+        DoScreenFadeOut(500)
+        while not IsScreenFadedOut() do
+            Wait(0)
+        end
+
+        SetEntityCoords(ped, defaultSpawn.x, defaultSpawn.y, defaultSpawn.z, false, false, false, true)
+        SetEntityHeading(ped, defaultSpawn.w or 0.0)
+
+        -- Forzamos la carga del suelo
+        RequestCollisionAtCoord(defaultSpawn.x, defaultSpawn.y, defaultSpawn.z)
+        NewLoadSceneStart(defaultSpawn.x, defaultSpawn.y, defaultSpawn.z, defaultSpawn.x, defaultSpawn.y,
+            defaultSpawn.z, 50.0, 0)
+        while not IsNewLoadSceneLoaded() do
+            Wait(10)
+        end
+        NewLoadSceneStop()
+
+        DoScreenFadeIn(1000)
+        -- Limpiamos el estado
+        pendingCData = nil
+        isNewCharacterFlow = false
+    end
 end)
