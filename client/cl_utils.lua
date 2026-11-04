@@ -28,6 +28,11 @@ end)
 RegisterNetEvent('qb-multicharacter:client:chooseSpawn', function()
     DebugPrint("qb-clothing ha terminado. Iniciando secuencia final de spawn...")
 
+    if IsMultiCharacterIntroActive and IsMultiCharacterIntroActive() then
+        TriggerEvent('DP-MultiCharacter:client:tailorFinished')
+        return
+    end
+
     Wait(500)
 
     QBCore.Functions.GetPlayerData(function(cData)
@@ -58,4 +63,13 @@ RegisterNetEvent('qb-multicharacter:client:chooseSpawn', function()
             TriggerEvent('DP-Inventory:client:updateInventory')
         end
     end)
+end)
+
+RegisterNetEvent('qb-clothing:client:firstCharacterSaved', function()
+    if not (IsMultiCharacterIntroActive and IsMultiCharacterIntroActive()) then
+        return
+    end
+
+    DebugPrint("qb-clothing confirmó la primera apariencia. Continuando la intro.")
+    TriggerEvent('DP-MultiCharacter:client:tailorFinished')
 end)

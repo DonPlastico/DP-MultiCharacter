@@ -1,9 +1,10 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 local hasDonePreloading = {}
 local isSelectingChar = {} -- Guarda quién está en el menú
+local characterCreationRequests = {}
 
 local function DebugPrint(msg)
-    if Config.Debug then
+    if Config.Debug or (Config.IntroFlow and Config.IntroFlow.Debug) then
         print("^5[DP-MultiCharacter Debug] ^7" .. msg)
     end
 end
@@ -104,6 +105,13 @@ RegisterNetEvent('DP-MultiCharacter:server:loadUserData', function(cData)
 end)
 
 function ProceedToSpawn(src, cData)
+    local Player = QBCore.Functions.GetPlayer(src)
+    if Config.IntroFlow and Config.IntroFlow.Enabled and Player and
+        Player.PlayerData.metadata and Player.PlayerData.metadata.introDone == false then
+        TriggerClientEvent('DP-MultiCharacter:client:resumeIntro', src, cData)
+        return
+    end
+
     if Config.SpawnPoints.SkipSelection then
         local coords = json.decode(cData.position)
         TriggerClientEvent('DP-MultiCharacter:client:spawnLastLocation', src, coords, cData)
@@ -114,11 +122,18 @@ end
 
 RegisterNetEvent('DP-MultiCharacter:server:createCharacter', function(data)
     local src = source
+    if characterCreationRequests[src] then
+        DebugPrint(("Petición duplicada de creación ignorada para %s."):format(src))
+        return
+    end
+
     if not CheckRateLimit(src, 'create') then
+        DebugPrint(("Petición de creación de %s bloqueada por rate limit."):format(src))
         TriggerClientEvent('QBCore:Notify', src, "Estás haciendo esto demasiado rápido. Espera unos segundos.",
             "error")
         return
     end
+    characterCreationRequests[src] = true
 
     if not data or type(data) ~= "table" then
         DropPlayer(src, "Exploit Detectado")
@@ -155,6 +170,15 @@ RegisterNetEvent('DP-MultiCharacter:server:createCharacter', function(data)
         local Player = QBCore.Functions.GetPlayer(src)
         if Player then
             Player.Functions.SetMetaData("created_at", os.time() * 1000)
+            Player.Functions.SetMetaData("health", 200)
+            Player.Functions.SetMetaData("armor", 100)
+            Player.Functions.SetMetaData("hunger", 100)
+            Player.Functions.SetMetaData("thirst", 100)
+            Player.Functions.SetMetaData("stress", 0)
+            if Config.IntroFlow and Config.IntroFlow.Enabled then
+                Player.Functions.SetMetaData("introDone", false)
+                Player.Functions.SetMetaData("introStep", "tailor")
+            end
             Player.Functions.SetMetaData("activityLog", {{
                 date = os.date("%d/%m/%Y, %H:%M:%S"),
                 text = "Llegada a la ciudad.",
@@ -166,6 +190,9 @@ RegisterNetEvent('DP-MultiCharacter:server:createCharacter', function(data)
 
         -- Le decimos al cliente que ya está creado y que abra el selector de spawn.
         TriggerClientEvent('DP-MultiCharacter:client:startSpawnSelection', src)
+    else
+        characterCreationRequests[src] = nil
+        print(("^1[DP-MultiCharacter]^7 QBCore.Player.Login falló al crear personaje para %s."):format(src))
     end
 end)
 
@@ -179,6 +206,14 @@ RegisterNetEvent('DP-MultiCharacter:server:SetBucket', function(bucket)
     else
         isSelectingChar[src] = nil
     end
+end)
+
+AddEventHandler('DP-MultiCharacter:server:bucketStarted', function(src)
+    isSelectingChar[src] = true
+end)
+
+AddEventHandler('DP-MultiCharacter:server:bucketReleased', function(src)
+    isSelectingChar[src] = nil
 end)
 
 -- ==========================================
@@ -227,6 +262,7 @@ RegisterNetEvent('DP-MultiCharacter:server:performLogout', function(pos, heading
 
         -- 4. Cerramos sesión y mandamos al selector
         QBCore.Player.Logout(src)
+        characterCreationRequests[src] = nil
         Wait(800)
         TriggerClientEvent('DP-MultiCharacter:client:chooseChar', src)
     end
@@ -278,7 +314,9 @@ end
 
 -- Guardar posición al desconectar
 AddEventHandler('playerDropped', function()
-    SavePlayerPosition(source)
+    local src = source
+    characterCreationRequests[src] = nil
+    SavePlayerPosition(src)
 end)
 
 -- 🛑 ESCUDO ANTI-GUARDADO DE QBCORE EN LA SALA OCULTA

@@ -110,27 +110,33 @@ Config.SpawnPoints = {
     DynamicSpawnBlips = {{
         name = "mrpd",
         label = "Comisaría Central (MRPD)",
-        icon = "radar_police_station", -- Comisaría
+        icon = "radar_police_station",
         info = "Comisaría de policía principal de Los Santos.",
-        coord = vector4(411.63, -966.19, 29.47, 226.55)
+        coord = vector4(415.77, -970.74, 29.45, 94.35)
     }, {
         name = "pillbox",
-        label = "Hospital Pillbox",
-        icon = "radar_hospital", -- Hospital
-        info = "Hospital principal de la ciudad, ideal para empezar.",
-        coord = vector4(246.86, -567.63, 43.28, 242.27)
+        label = "Centro Medico (Pillbox)",
+        icon = "radar_hospital",
+        info = "Hospital principal de Los Santos..",
+        coord = vector4(280.99, -586.21, 43.3, 67.15)
     }, {
         name = "airport",
         label = "Aeropuerto LSIA",
-        icon = "radar_plane_drop", -- Icono de avión (más original que el de escuela)
+        icon = "radar_plane_drop",
         info = "Aeropuerto Internacional de Los Santos.",
-        coord = vector4(-1038.0, -2738.0, 20.0, 330.0)
+        coord = vector4(-1037.69, -2737.77, 20.17, 329.95)
+    }, {
+        name = "dealership",
+        label = "Concesionario",
+        icon = "radar_car",
+        info = "Concesionario para iniciar tu aventura.",
+        coord = vector4(-56.90, -1098.70, 26.42, 26.0)
     }, {
         name = "paleto",
         label = "Paleto Bay Motel",
-        icon = "radar_motel", -- Icono de motel (o usa "radar_safehouse")
+        icon = "radar_motel",
         info = "Motel en la pintoresca zona de Paleto Bay.",
-        coord = vector4(-106.0, 6314.0, 31.0, 136.0)
+        coord = vector4(-105.1, 6315.56, 31.58, 134.78)
     }, {
         name = "sandy",
         label = "Sandy Shores House",
@@ -228,6 +234,76 @@ Config.SpawnPoints = {
         info = "El famoso cartel de Hollywood en Vinewood Hills.",
         coord = vector4(715.0, 1193.0, 350.0, 200.0)
     }}
+}
+
+Config.IntroFlow = {
+    Enabled = true,
+    Debug = true,
+    -- Punto de la Fábrica de Lester (Darnell Bros), compartido con DP-AdminMenu.
+    TailorRoomCoords = vector4(713.84, -961.53, 30.39, 180.0),
+    BucketStart = 5000,
+    MaxConcurrent = 16,
+    MaxQueue = 64,
+    CinematicDuration = 14,
+    BucketPopulation = false,
+    Destinations = {}
+}
+
+-- La lista de destinos de la intro usa los mismos puntos que DP-PauseMenu.
+for _, spawnPoint in ipairs(Config.SpawnPoints.DynamicSpawnBlips or {}) do
+    if spawnPoint.name and spawnPoint.coord then
+        Config.IntroFlow.Destinations[spawnPoint.name] = {
+            label = spawnPoint.label or spawnPoint.name,
+            method = "taxi",
+            coords = spawnPoint.coord
+        }
+    end
+end
+
+Config.IntroFlow.TaxiStart = (Config.IntroFlow.Destinations.airport and Config.IntroFlow.Destinations.airport.coords) or
+                                 Config.SpawnPoints.DefaultSpawn
+
+Config.IntroCinematic = {
+    Enabled = true,
+    Duration = 14,
+    SoundEnabled = false
+}
+
+Config.Taxi = {
+    Models = {{
+        model = "taxi",
+        chance = 40
+    }, {
+        model = "taxi2",
+        chance = 20
+    }, {
+        model = "stanier",
+        chance = 10
+    }, {
+        model = "premier",
+        chance = 10
+    }, {
+        model = "asea",
+        chance = 8
+    }, {
+        model = "stratum",
+        chance = 7
+    }, {
+        model = "emperor",
+        chance = 5
+    }},
+    DriverModel = "s_m_m_gentransport",
+    TrafficMode = "private",
+    BasePrice = 50,
+    PricePerMeter = 0.15,
+    MinFare = 25,
+    MaxFare = 2500,
+    RushSurcharge = 5,
+    RushCooldown = 3,
+    MaxDestinationChanges = 2,
+    DestinationChangeCooldown = 10,
+    StuckTimeout = 30,
+    TripTimeout = 900
 }
 
 -- Ítems extras que el jugador puede comprar al crear un personaje.

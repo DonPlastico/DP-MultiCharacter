@@ -13,7 +13,7 @@ CreateThread(function()
 end)
 
 local function DebugPrint(msg)
-    if Config.Debug then
+    if Config.Debug or (Config.IntroFlow and Config.IntroFlow.Debug) then
         print("^5[DP-MultiCharacter Debug] ^7" .. msg)
     end
 end
@@ -362,60 +362,80 @@ local function DecodePosition(position)
     return position
 end
 
--- Teletransporta físicamente al jugador al mundo asegurando el suelo
+-- Spawnea en el destino mientras mantiene al jugador oculto durante la carga de colisiones.
 RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, cData)
     local ped = PlayerPedId()
 
-    -- Validación estricta de tipos (table, vector3, vector4)
-    if not coords or (type(coords) ~= "table" and type(coords) ~= "vector3" and type(coords) ~= "vector4") or
-        not coords.x then
+    -- Validate saved coordinates before using them in streaming natives.
+    if not coords or (type(coords) ~= "table" and type(coords) ~= "vector3" and type(coords) ~= "vector4") then
         coords = Config.SpawnPoints.DefaultSpawn
     end
+    local x, y, z = tonumber(coords.x), tonumber(coords.y), tonumber(coords.z)
+    if not x or not y or not z or x ~= x or y ~= y or z ~= z or
+        math.abs(x) > 10000 or math.abs(y) > 10000 or z < -200 or z > 2000 then
+        DebugPrint(("Coordenadas de spawn inválidas (%s, %s, %s); usando el spawn por defecto."):format(
+            tostring(coords.x), tostring(coords.y), tostring(coords.z)))
+        coords = Config.SpawnPoints.DefaultSpawn
+        x, y, z = coords.x, coords.y, coords.z
+    end
 
-    -- Antes eran 50 metros, por eso el monte Chilliad se confundía con la sala.
-    local distMenu = #(vector3(coords.x, coords.y, coords.z) -
-                         vector3(Config.HiddenCoords.x, Config.HiddenCoords.y, Config.HiddenCoords.z))
+    local distMenu = #(vector2(x, y) - vector2(Config.HiddenCoords.x, Config.HiddenCoords.y))
 
     if distMenu < 5.0 then
         coords = Config.SpawnPoints.DefaultSpawn
+        x, y, z = coords.x, coords.y, coords.z
+    end
+    local heading = tonumber(coords.w or coords.h or coords.a or coords.heading) or 0.0
+    DebugPrint(("spawnLastLocation: destino %.2f %.2f %.2f (heading %.2f)."):format(
+        x, y, z, heading))
+
+    if not IsScreenFadedOut() then
+        DoScreenFadeOut(500)
+        while not IsScreenFadedOut() do
+            Wait(0)
+        end
     end
 
-    DoScreenFadeOut(500)
-    Wait(500)
-
+    -- 🛑 PROTEGER PED
     FreezeEntityPosition(ped, true)
     SetEntityInvincible(ped, true)
+    SetEntityVisible(ped, false, false)
+    SetEntityCollision(ped, false, false)
 
-    local heading = coords.w or coords.h or coords.a or coords.heading or 0.0
-    SetEntityCoords(ped, coords.x, coords.y, coords.z + 1.0)
+    -- Move directly to the destination: climbing hundreds of metres can exhaust
+    -- GTA's MapDataLoadedNode pool while streaming the whole surrounding world.
+    SetEntityCoordsNoOffset(ped, x, y, z + 1.0, false, false, false, true)
     SetEntityHeading(ped, heading + 0.0)
 
-    -- FORZAMOS LA CARGA DEL MAPA ANTES DE SOLTAR AL JUGADOR
-    RequestCollisionAtCoord(coords.x, coords.y, coords.z)
-    NewLoadSceneStart(coords.x, coords.y, coords.z, coords.x, coords.y, coords.z, 50.0, 0)
-
+    RequestCollisionAtCoord(x, y, z)
     local timeOut = 0
-    while not IsNewLoadSceneLoaded() and timeOut < 5000 do
-        Wait(50)
-        timeOut = timeOut + 50
+    while not HasCollisionLoadedAroundEntity(ped) and timeOut < 8000 do
+        Wait(100)
+        timeOut = timeOut + 100
     end
 
-    timeOut = 0
-    while not HasCollisionLoadedAroundEntity(ped) and timeOut < 5000 do
-        RequestCollisionAtCoord(coords.x, coords.y, coords.z)
-        Wait(50)
-        timeOut = timeOut + 50
+    if timeOut >= 8000 then
+        DebugPrint(("Colisiones no cargaron en 8 s para %.2f %.2f %.2f; se mantiene el spawn solicitado."):format(
+            x, y, z))
     end
 
-    NewLoadSceneStop()
-    SetEntityCoordsNoOffset(ped, coords.x, coords.y, coords.z, false, false, false, true)
+    SetEntityCoordsNoOffset(ped, x, y, z, false, false, false, true)
 
-    SetEntityVisible(ped, true, false)
+    -- 🛑 RESTAURAR PED
+    SetEntityCollision(ped, true, true)
     FreezeEntityPosition(ped, false)
+    SetEntityVisible(ped, true, false)
     SetEntityInvincible(ped, false)
     ClearPedTasksImmediately(ped)
 
-    if cData and cData.metadata then
+    -- 🛑 APLICAR SALUD Y ARMADURA
+    local isFirstSpawn = isNewCharacterFlow or
+        (cData and cData.metadata and cData.metadata.introDone == false)
+    if isFirstSpawn then
+        local maxHealth = GetEntityMaxHealth(ped)
+        SetEntityHealth(ped, maxHealth)
+        SetPedArmour(ped, 100)
+    elseif cData and cData.metadata then
         local savedHealth = cData.metadata.health or 200
         local savedArmor = cData.metadata.armor or 0
         SetEntityHealth(ped, savedHealth)
@@ -425,7 +445,7 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
     TriggerServerEvent('QBCore:Server:OnPlayerLoaded')
     TriggerEvent('QBCore:Client:OnPlayerLoaded')
 
-    Wait(1000)
+    Wait(500)
     DoScreenFadeIn(1000)
 end)
 
@@ -443,6 +463,13 @@ RegisterNetEvent('DP-MultiCharacter:client:loadSkinAndSpawn', function(model, sk
     playerPed = PlayerPedId()
     if skinData then
         TriggerEvent('qb-clothing:client:loadPlayerClothing', skinData, playerPed)
+    end
+
+    if Config.IntroFlow and Config.IntroFlow.Enabled and cData.metadata and cData.metadata.introDone == false then
+        pendingCData = cData
+        isNewCharacterFlow = true
+        TriggerServerEvent('DP-MultiCharacter:server:resumeIntro')
+        return
     end
 
     local coords = DecodePosition(cData.position)

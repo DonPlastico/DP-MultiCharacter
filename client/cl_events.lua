@@ -1,7 +1,7 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 
 local function DebugPrint(msg)
-    if Config.Debug then
+    if Config.Debug or (Config.IntroFlow and Config.IntroFlow.Debug) then
         print("^5[DP-MultiCharacter Debug] ^7" .. msg)
     end
 end
@@ -70,6 +70,7 @@ RegisterNUICallback('deletePreview', function(data, cb)
 end)
 
 RegisterNUICallback('createCharacter', function(data, cb)
+    DebugPrint("NUI createCharacter recibido; iniciando transición al servidor.")
     if not IsScreenFadedOut() then
         DoScreenFadeOut(300)
         while not IsScreenFadedOut() do
@@ -194,6 +195,17 @@ RegisterNetEvent('DP-MultiCharacter:client:startSpawnSelection', function()
             return
         end
 
+        pendingCData = cData
+        isNewCharacterFlow = true
+        ToggleUI(false)
+        DeleteAllPeds()
+        SetupCamera(false)
+        if Config.IntroFlow and Config.IntroFlow.Enabled then
+            DebugPrint(("Personaje %s creado; solicitando inicio de intro."):format(tostring(cData.citizenid)))
+            TriggerServerEvent('DP-MultiCharacter:server:startIntro')
+            return
+        end
+
         -- Ocultamos cualquier UI residual (la landing ya se ocultó al pulsar CREAR)
         ToggleUI(false)
         DeleteAllPeds()
@@ -211,4 +223,13 @@ RegisterNetEvent('DP-MultiCharacter:client:startSpawnSelection', function()
             TriggerEvent('DP-MultiCharacter:client:openSpawnUI')
         end
     end)
+end)
+
+RegisterNetEvent('DP-MultiCharacter:client:resumeIntro', function(cData)
+    if not cData or not cData.citizenid then
+        return
+    end
+    pendingCData = cData
+    isNewCharacterFlow = true
+    TriggerServerEvent('DP-MultiCharacter:server:resumeIntro')
 end)

@@ -580,7 +580,18 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("message", (event) => {
     const data = event.data;
 
-    if (data.action === "toggleUI") {
+    if (data.action === "introTaxiHud") {
+      const hud = document.getElementById("intro-taxi-hud");
+      if (hud) {
+        hud.classList.toggle("visible", data.show === true);
+        if (data.destination !== undefined) {
+          document.getElementById("intro-taxi-destination").textContent = data.destination || "Taxi en camino";
+        }
+        if (data.status !== undefined) {
+          document.getElementById("intro-taxi-status").textContent = data.status || "";
+        }
+      }
+    } else if (data.action === "toggleUI") {
       // Actualizamos la variable global de debug recibida desde Lua
       if (data.debug !== undefined) {
         DEBUG_MODE = data.debug;
@@ -1060,6 +1071,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Objeto global temporal para guardar los datos del personaje mientras el jugador compra
   let pendingCharacterData = null;
+  let characterCreationSubmitted = false;
 
   // Envío del formulario de registro (Paso 1: Validación y transición a Tienda)
   document.getElementById("btn-create-reg").addEventListener("click", (e) => {
@@ -1088,6 +1100,7 @@ document.addEventListener("DOMContentLoaded", () => {
       gender: selectedGender === "Masculino" ? 0 : 1,
       nationality: selectedNationality,
     };
+    characterCreationSubmitted = false;
 
     DebugPrint("Formulario validado. Abriendo pantalla de Starting Items.");
 
@@ -1154,7 +1167,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Función que consolida el envío final al servidor
   function submitFinalCharacterCreation(cartPayload) {
-    if (!pendingCharacterData) return;
+    if (!pendingCharacterData || characterCreationSubmitted) return;
+    characterCreationSubmitted = true;
 
     const finalData = {
       ...pendingCharacterData,
@@ -1174,6 +1188,7 @@ document.addEventListener("DOMContentLoaded", () => {
           setButtonLoading(btnPurchase, false);
           resetForm();
           pendingCharacterData = null;
+          characterCreationSubmitted = false;
         });
     }, 1500);
   }

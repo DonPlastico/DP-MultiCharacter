@@ -1,9 +1,17 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 
 local function DebugPrint(msg)
-    if Config.Debug then
+    if Config.Debug or (Config.IntroFlow and Config.IntroFlow.Debug) then
         print("^5[DP-MultiCharacter:Spawn Debug] ^7" .. msg)
     end
+end
+
+local function DescribeCoords(coords)
+    if type(coords) ~= "table" and type(coords) ~= "vector3" and type(coords) ~= "vector4" then
+        return tostring(coords or "ninguna")
+    end
+    return ("%.2f %.2f %.2f"):format(
+        tonumber(coords.x) or 0.0, tonumber(coords.y) or 0.0, tonumber(coords.z) or 0.0)
 end
 
 -- Datos del personaje pendiente de spawnear (los rellena cl_main.lua / cl_events.lua)
@@ -42,6 +50,10 @@ end
 -- Este evento lo dispara DP-MultiCharacter cuando el jugador ha elegido personaje
 -- (o ha terminado de crearlo) y necesita elegir dónde aparecer.
 RegisterNetEvent('DP-MultiCharacter:client:openSpawnUI', function()
+    local dynamicSpawnBlips = Config.SpawnPoints.DynamicSpawnBlips or {}
+    DebugPrint(("openSpawnUI recibido (intro activa: %s, puntos dinámicos: %s)."):format(
+        tostring(IsMultiCharacterIntroActive and IsMultiCharacterIntroActive()),
+        tostring(#dynamicSpawnBlips)))
     DoScreenFadeOut(300)
     while not IsScreenFadedOut() do
         Wait(0)
@@ -62,6 +74,9 @@ RegisterNetEvent('DP-MultiCharacter:client:openSpawnUI', function()
 
         local success, err = pcall(function()
             if exports['DP-PauseMenu'] and exports['DP-PauseMenu'].OpenSpawnSelectorWithApartments then
+                DebugPrint(("Abriendo DP-PauseMenu con %s blips, %s apartamentos y selección activa de intro: %s."):format(
+                    #dynamicSpawnBlips, #apartments,
+                    tostring(IsMultiCharacterIntroActive and IsMultiCharacterIntroActive())))
                 local locToSend = nil
                 if Config.SpawnPoints.EnableLastLocation then
                     locToSend = lastLocation
@@ -69,8 +84,9 @@ RegisterNetEvent('DP-MultiCharacter:client:openSpawnUI', function()
 
                 -- 👇 PASAMOS Config.SpawnPoints.EnableApartments COMO 6º ARGUMENTO 👇
                 exports['DP-PauseMenu']:OpenSpawnSelectorWithApartments(function(coords)
+                    DebugPrint(("Callback de DP-PauseMenu recibido: %s."):format(DescribeCoords(coords)))
                     HandleSpawnSelectionResult(coords)
-                end, apartments, Config.SpawnPoints.DynamicSpawnBlips, locToSend, Config.SpawnPoints.EnableLastLocation,
+                end, apartments, dynamicSpawnBlips, locToSend, Config.SpawnPoints.EnableLastLocation,
                     Config.SpawnPoints.EnableApartments)
             else
                 DebugPrint("Export OpenSpawnSelectorWithApartments no disponible. Usando el clásico sin apartamentos.")
@@ -128,6 +144,14 @@ end)
 
 -- Callback común para procesar el resultado del mapa (extraído para no duplicar lógica)
 function HandleSpawnSelectionResult(coords)
+    DebugPrint(("Procesando selección %s; intro activa: %s."):format(
+        DescribeCoords(coords), tostring(IsMultiCharacterIntroActive and IsMultiCharacterIntroActive())))
+    if IsMultiCharacterIntroActive and IsMultiCharacterIntroActive() then
+        DebugPrint("Enviando el punto elegido al servidor para validar e iniciar el taxi.")
+        TriggerServerEvent('DP-MultiCharacter:server:confirmIntroSpawn', coords)
+        return
+    end
+
     if not IsScreenFadedOut() then
         DoScreenFadeOut(300)
         while not IsScreenFadedOut() do
@@ -157,6 +181,11 @@ end
 -- 🛑 CANCELACIÓN DEL SELECTOR DE SPAWN (VOLVER AL MULTICHARACTER)
 -- =====================================================================
 RegisterNetEvent('DP-PauseMenu:spawnCancelled', function()
+    if IsMultiCharacterIntroActive and IsMultiCharacterIntroActive() then
+        TriggerEvent('DP-MultiCharacter:client:openIntroSpawnSelector')
+        return
+    end
+
     -- Descongelamos al jugador para que pueda interactuar con el menú del multicharacter
     local ped = PlayerPedId()
     FreezeEntityPosition(ped, false)
@@ -220,19 +249,26 @@ AddEventHandler('onResourceStop', function(resourceName)
             Wait(0)
         end
 
-        SetEntityCoords(ped, defaultSpawn.x, defaultSpawn.y, defaultSpawn.z, false, false, false, true)
+        -- 🔥 1. Lo movemos un poco por encima del suelo sin forzar la escena 🔥
+        SetEntityCoords(ped, defaultSpawn.x, defaultSpawn.y, defaultSpawn.z + 0.5, false, false, false, false)
         SetEntityHeading(ped, defaultSpawn.w or 0.0)
 
-        -- Forzamos la carga del suelo
+        -- 🔥 2. Dejamos que el motor cargue solo (Evita el crasheo Pool Full) 🔥
+        Wait(1500)
+
+        -- 🔥 3. Aseguramos las colisiones suavemente 🔥
         RequestCollisionAtCoord(defaultSpawn.x, defaultSpawn.y, defaultSpawn.z)
-        NewLoadSceneStart(defaultSpawn.x, defaultSpawn.y, defaultSpawn.z, defaultSpawn.x, defaultSpawn.y,
-            defaultSpawn.z, 50.0, 0)
-        while not IsNewLoadSceneLoaded() do
-            Wait(10)
+        local timeOut = 0
+        while not HasCollisionLoadedAroundEntity(ped) and timeOut < 3000 do
+            Wait(100)
+            timeOut = timeOut + 100
         end
-        NewLoadSceneStop()
+
+        -- Ajustamos a la Z perfecta
+        SetEntityCoordsNoOffset(ped, defaultSpawn.x, defaultSpawn.y, defaultSpawn.z, false, false, false, true)
 
         DoScreenFadeIn(1000)
+
         -- Limpiamos el estado
         pendingCData = nil
         isNewCharacterFlow = false
