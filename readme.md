@@ -1,365 +1,322 @@
 # DP-MultiCharacter
 
-Sistema de selección y creación de personajes para servidores **QBCore** (FiveM), con una interfaz NUI moderna estilo "launcher cinemático" (cámara, siluetas 3D en el mundo, tarjetas de personaje, panel de estadísticas, drag & drop para reordenar, sistema de traducciones, etc.).
+Selector y gestor de personajes para **FiveM/QBCore**. Incluye interfaz NUI, creación y selección de personajes, previsualización 3D, opciones de aparición y un flujo de llegada para personajes nuevos.
 
----
+> **Estado del documento:** describe el comportamiento encontrado en el recurso. Las secciones marcadas como *pendiente* o *limitación conocida* no deben interpretarse como funciones ya verificadas en un servidor FiveM en vivo.
 
-## 📂 Estructura del proyecto
+## Contenido
 
-```
+1. [Funciones y estado](#funciones-y-estado)
+2. [Requisitos e instalación](#requisitos-e-instalación)
+3. [Uso del jugador](#uso-del-jugador)
+4. [Configuración para owner y administración](#configuración-para-owner-y-administración)
+5. [Integraciones](#integraciones)
+6. [Datos y persistencia](#datos-y-persistencia)
+7. [Guía para desarrollo](#guía-para-desarrollo)
+8. [Estructura del recurso](#estructura-del-recurso)
+9. [Diagnóstico](#diagnóstico)
+10. [Flujo 14: llegada de personajes nuevos](#14-flujo-de-llegada-de-personajes-nuevos)
+11. [Capturas pendientes](#capturas-pendientes)
+
+## Funciones y estado
+
+| Función | Estado actual |
+|---|---|
+| Selector de personajes QBCore, creación y carga de personajes | Implementado |
+| Previsualizaciones 3D, cámara, lista y ficha de personaje | Implementado |
+| Orden manual de personajes y eliminación recuperable | Implementado; la recuperación está limitada por el plazo interno de cinco días |
+| Selector de spawn mediante DP-PauseMenu, puntos dinámicos, última ubicación y datos de propiedades | Implementado con integración externa; validar en el servidor concreto |
+| Intro de personaje nuevo: personalización, cinemática, selector y taxi | Implementado en código; hay incidencias de ejecución descritas en [Flujo 14](#14-flujo-de-llegada-de-personajes-nuevos) |
+| Preferencia para ocultar slots vacíos y volumen de interfaz | Implementado |
+| Historial de actividad básico | Implementado; solo muestra eventos que hayan sido registrados |
+| Compra de slots, preferencia de spawn y envío real de reportes | **No implementado**; las pantallas son maquetas |
+| Exportación/importación de personajes | **No implementado**; genera una vista previa de ejemplo, no un backup restaurable |
+| Importación/exportación múltiple y menú de organización | **No implementado** |
+| Control de HUD/NUI pertenecientes a otros recursos | **Limitado**; este recurso no puede garantizar que otras interfaces se oculten |
+
+## Requisitos e instalación
+
+### Requisitos
+
+- **QBCore** (`qb-core`).
+- **oxmysql**, iniciado antes de este recurso. El manifiesto carga `@oxmysql/lib/MySQL.lua`.
+- **DP-PauseMenu** para abrir el selector de spawn que se usa en los flujos normal y de intro.
+- **qb-clothing** para personalizar el aspecto inicial. Si no está iniciado, el código de intro intenta continuar sin esa personalización.
+- Tablas de personajes y skins de la instalación QBCore (`players`, `playerskins`).
+
+La consulta de casas y apartamentos depende también de las tablas/configuración de esos recursos. No es obligatorio instalar esos sistemas si se desactivan las opciones correspondientes.
+
+### Instalación
+
+1. Copia `DP-MultiCharacter` en la carpeta de recursos del servidor.
+2. Revisa [config.lua](./config.lua), en particular las licencias de slots especiales, URLs, coordenadas y opciones de intro.
+3. En `server.cfg`, inicia primero las dependencias y después los recursos integrados. Por ejemplo:
+
+   ```cfg
+   ensure oxmysql
+   ensure qb-core
+   ensure DP-PauseMenu
+   ensure qb-clothing
+   ensure DP-MultiCharacter
+   ```
+
+   Ajusta los nombres y el orden a los recursos reales de tu servidor.
+4. No hay un archivo SQL de instalación incluido. El recurso crea automáticamente `dp_multicharacter_settings` al iniciar; las demás tablas indicadas arriba pertenecen a QBCore o a integraciones.
+5. Reinicia el recurso/servidor y prueba primero con un personaje de pruebas.
+
+La NUI carga Axios, Flatpickr, fuentes e iconos desde CDN. Si el CEF del cliente no puede acceder a esos dominios, ciertos estilos, calendarios o componentes externos podrían no cargarse correctamente.
+
+## Uso del jugador
+
+### Elegir o crear personaje
+
+La interfaz presenta una pantalla de inicio, una lista de personajes y una ficha con datos disponibles como identidad, dinero, empleo/banda y última actividad. El jugador puede elegir un personaje existente o abrir el formulario de creación. Los campos se validan en la interfaz y vuelven a validarse en el servidor.
+
+El número de slots es individual según la licencia: se aplica `Config.CustomSlots[license]` si existe; de lo contrario, se usa `Config.DefaultSlots`. Los slots vacíos pueden ocultarse desde Preferencias.
+
+### Opciones disponibles
+
+- **Restaurar personaje:** muestra personajes eliminados dentro del plazo de recuperación, si hay un slot libre.
+- **Sonido de interfaz:** permite cambiar el volumen; se conserva por licencia en la base de datos.
+- **Ocultar slots vacíos:** preferencia local del cliente.
+- **Ayuda web/Discord:** muestra los enlaces habilitados en la configuración.
+- **Historial:** muestra fecha de creación, tiempo jugado, última actualización y eventos guardados en `metadata.activityLog`.
+- **Orden:** permite reordenar personajes y guardar el orden de sus slots.
+
+La interfaz también contiene controles visuales para otras opciones; consulta [Funciones y estado](#funciones-y-estado) antes de ofrecerlas como funciones disponibles.
+
+### Cerrar sesión
+
+El comando configurado en `Config.CommandLogOut` es `/logout` por defecto. El recurso guarda la posición segura, salud y armadura antes de cerrar la sesión y volver al selector. La posición dentro de la sala oculta no debe reemplazar la última posición real.
+
+## Configuración para owner y administración
+
+Las opciones principales están en [config.lua](./config.lua). Cambia las coordenadas con cuidado y conserva el formato `vector3`/`vector4` que espera el código.
+
+### Acceso y límites
+
+| Opción | Uso |
+|---|---|
+| `Config.Debug` | Activa mensajes de diagnóstico generales. |
+| `Config.Locale` | Idioma: `es`, `en`, `de`, `fr`, `it` o `pt`. |
+| `Config.EnableDeleteButton` | Permite o no eliminar personajes desde el selector. |
+| `Config.DefaultSlots` | Slots por defecto; el servidor limita el resultado entre 1 y 7. |
+| `Config.CustomSlots` | Excepciones por licencia. Sustituye la licencia de ejemplo por la del usuario autorizado; no publiques licencias reales en documentación o capturas. |
+| `Config.MinAge` / `Config.MaxAge` | Rango permitido para la fecha de nacimiento. |
+| `Config.RateLimits` | Espera entre solicitudes de creación, borrado, reordenamiento, exportación e importación. Los dos últimos límites no habilitan las funciones de backup. |
+| `Config.CommandLogOut` | Nombre del comando para volver al selector. |
+| `Config.EnableWebHelp`, `Config.WebHelpURL`, `Config.EnableDiscordHelp`, `Config.DiscordHelpURL` | Enlaces que aparecen en la interfaz. Sustituye los valores de ejemplo. |
+
+No hay un panel administrativo ni un comando de administración de slots en este recurso. Los slots especiales se asignan editando `Config.CustomSlots`; no hay compra automática.
+
+### Sala, cámara y modelos
+
+- `Config.Interior`, `Config.HiddenCoords`, `Config.PedCoords`, `Config.PedSpacing` y `Config.CamCoords` controlan el selector y sus previsualizaciones.
+- `Config.CharactersAnimations` habilita las animaciones de las previsualizaciones.
+- `Config.DefaultMaleModel` y `Config.DefaultFemaleModel` definen los modelos base de las sombras/personajes nuevos.
+- `Config.Nationalities` alimenta el selector de nacionalidad.
+
+La UI calcula posiciones para los slots, pero hay cinco coordenadas predefinidas en `PedCoords`. Prueba la distribución si cambias la cantidad máxima de slots.
+
+### Puntos de aparición
+
+`Config.SpawnPoints` controla el flujo de spawn:
+
+- `SkipSelection`: para el flujo normal de personajes existentes, decide si se omite el mapa y se intenta usar la última posición.
+- `DefaultSpawn`: punto de emergencia/reserva.
+- `EnableLastLocation`: incluye la última ubicación cuando está disponible.
+- `EnableHouses`: permite consultar casas de `qb-houses`.
+- `EnableApartments` y `ApartmentsStarting`: opciones para el selector y el flujo de apartamentos nuevos.
+- `ShowOwnedApartmentsOnMap`: añade al mapa los apartamentos que ya posee el personaje.
+- `DynamicSpawnBlips`: lista de puntos compartidos con DP-PauseMenu y utilizada para generar los destinos de la intro.
+
+Cada punto dinámico usa `name`, `label`, `icon`, `info` y `coord` (`vector4`). Para la intro, usa nombres únicos y coordenadas cercanas al punto que el selector realmente devuelve. Ver [14.1](#141-unificar-y-validar-los-puntos-de-spawn).
+
+### Intro, cinemática y taxi
+
+- `Config.IntroFlow.Enabled`: activa el flujo de primera llegada de personajes nuevos.
+- `Config.IntroFlow.Debug`: activa logs detallados de la intro en F8/consola; actualmente está activo en la configuración incluida. Desactívalo en producción si no estás depurando.
+- `TailorRoomCoords`: coordenada de pruebas actual en la fábrica de Lester, en el taller de sastre.
+- `BucketStart`, `MaxConcurrent`, `MaxQueue`, `BucketPopulation`: controlan instancias aisladas y la cola.
+- `CinematicDuration`, junto con `Config.IntroCinematic.Enabled` y `Duration`, controla el zoom y duración. La cinemática actual hace zoom óptico, funde a negro y espera antes de abrir el mapa; no ofrece un control para saltarla.
+- `Config.Taxi.Models` y `DriverModel`: modelos y probabilidades.
+- `TrafficMode`: actualmente configurado como `private`; no significa que el taxi circule en el tráfico público.
+- `BasePrice`, `PricePerMeter`, `MinFare`, `MaxFare`, `RushSurcharge`: parámetros de tarifa. La tarifa puede cobrar desde efectivo y banco según el comportamiento de servidor.
+- `RushCooldown`, `MaxDestinationChanges`, `DestinationChangeCooldown`, `StuckTimeout`, `TripTimeout`: límites del trayecto y recuperación.
+
+`Config.StartItemsList` define los artículos del carrito de creación (nombre, etiqueta, precio y cantidades mínimas/máximas). Los precios mostrados en la UI incluyen un recargo visual del 25%. Asegúrate de que cada nombre exista en `QBCore.Shared.Items`. No cambies la estructura del carrito sin revisar [client/cl_events.lua](./client/cl_events.lua) y [server/sv_utils.lua](./server/sv_utils.lua).
+
+`Config.ExportCharacters` y `Config.ImportCharacters` controlan la visibilidad de botones; **no convierten las maquetas actuales en exportación/importación funcional**.
+
+## Integraciones
+
+| Recurso/sistema | Uso |
+|---|---|
+| `qb-core` | Login, datos, callbacks, dinero, notificaciones y comandos. Obligatorio. |
+| `oxmysql` | Acceso a MySQL. Obligatorio en la práctica. |
+| `DP-PauseMenu` | Selector de spawn y mapa. La intro reutiliza su export `OpenSpawnSelectorWithApartments`. |
+| `qb-clothing` | Personalización inicial y guardado de apariencia. Necesario para completar la experiencia de ropa prevista. |
+| `qb-houses` | Consulta de casas propias para ofrecerlas como spawn; depende de las tablas esperadas por el recurso. |
+| `qb-apartments` | Consulta de apartamentos existentes y configuración de ubicaciones. |
+| `DP-RealMoney` | Si está iniciado, se invoca `UpdateItem` al cargar el personaje para sincronizar los artículos monetarios. |
+| `DP-Inventory` | No es la ruta usada para entregar el carrito inicial; los artículos se escriben en los datos QBCore del jugador. |
+
+Las interfaces de otros recursos (HUD, minimapa, videos y NUI) no quedan necesariamente ocultas por DP-MultiCharacter. Su administración debe coordinarse con esos recursos.
+
+## Datos y persistencia
+
+- Personajes, skins, posiciones y metadatos se almacenan en las tablas de QBCore.
+- El volumen de interfaz se guarda por licencia en `dp_multicharacter_settings`; la tabla se crea al iniciar.
+- La eliminación normal marca el personaje para recuperación mediante `metadata.PROCESO_ELIMINACION`; no lo elimina inmediatamente.
+- La ventana de restauración está fijada internamente en **cinco días**. Al vencer, una tarea periódica intenta purgar el personaje y datos asociados.
+- Para restaurar, el personaje debe seguir dentro del plazo y debe existir un slot libre.
+- El historial UI usa `metadata.activityLog`. Otros recursos/desarrolladores pueden registrar una entrada mediante el export `LogCharacterEvent` de [server/sv_utils.lua](./server/sv_utils.lua).
+
+Haz copias de seguridad de la base de datos antes de cambiar esquemas o probar la purga de personajes.
+
+## Guía para desarrollo
+
+### Flujo normal
+
+1. [client/cl_events.lua](./client/cl_events.lua) abre el selector, atiende callbacks NUI y solicita personajes al servidor.
+2. [client/cl_main.lua](./client/cl_main.lua) gestiona la cámara, peds de previsualización, foco y presentación.
+3. [server/sv_database.lua](./server/sv_database.lua) lista, ordena, elimina/restaura personajes y mantiene una caché corta.
+4. [server/sv_main.lua](./server/sv_main.lua) valida identidad/edad/nacionalidad, crea o carga el personaje y procesa logout.
+5. [client/cl_spawn.lua](./client/cl_spawn.lua) envía los datos de spawn al export de DP-PauseMenu y procesa la respuesta.
+6. [server/sv_spawn.lua](./server/sv_spawn.lua) obtiene datos de última posición, casas y apartamentos.
+7. [client/cl_utils.lua](./client/cl_utils.lua) concentra utilidades de cliente e integración de ropa.
+
+### Flujo de intro
+
+[server/sv_intro.lua](./server/sv_intro.lua) mantiene las fases, buckets, destinos, límites y cobro. [client/cl_intro.lua](./client/cl_intro.lua) hace las transiciones, streaming, cinemática y taxi. [client/cl_spawn.lua](./client/cl_spawn.lua) reusa el selector de mapa. `Config.IntroFlow.Destinations` se construye a partir de `Config.SpawnPoints.DynamicSpawnBlips` al cargar la configuración.
+
+Los nombres de eventos `DP-MultiCharacter:*` son principalmente comunicación interna entre cliente y servidor; no deben considerarse una API pública estable sin revisar sus validaciones y ciclo de vida. El export `LogCharacterEvent` es la integración externa identificada en el código.
+
+### NUI
+
+- [ui/index.html](./ui/index.html) y [ui/style.css](./ui/style.css): estructura y presentación.
+- [ui/js/app.js](./ui/js/app.js): pantallas, formularios, callbacks NUI, opciones e historial.
+- [ui/js/validators.js](./ui/js/validators.js): validación de formulario en cliente; el servidor también valida datos.
+- [ui/js/sounds.js](./ui/js/sounds.js): sonidos sintéticos WebAudio y volumen.
+- [ui/js/dev.js](./ui/js/dev.js): simulador local de navegador con datos falsos; no representa la base de datos ni el estado real de FiveM.
+
+## Estructura del recurso
+
+```text
 DP-MultiCharacter/
-├── 📁 client/
-│   ├── 📄 cl_main.lua      # Cámara, gestión de peds (personajes 3D), zoom/foco, spawn final
-│   ├── 📄 cl_events.lua    # Entrada al servidor + NUI Callbacks (JS -> Lua)
-│   ├── 📄 cl_spawn.lua     # Sistema integrado del selector de Spawn
-│   └── 📄 cl_utils.lua     # Utilidades editables (notificaciones, integración con qb-clothing)
-├── 📁 server/
-│   ├── 📄 sv_main.lua      # Login/registro de personajes en QBCore, spawn, buckets
-│   ├── 📄 sv_database.lua  # Consultas SQL: listar, borrar y reordenar personajes
-│   └── 📄 sv_utils.lua     # Ítems/dinero de bienvenida, integraciones externas
-├── 📁 locales/
-│   ├── 📄 sistema.lua      # Motor de traducciones (_U() y GetTranslations())
-│   ├── 📄 es.lua           # Idioma default predefinido
-│   ├── 📄 de.lua
-│   ├── 📄 en.lua
-│   ├── 📄 fr.lua
-│   ├── 📄 it.lua
-│   └── 📄 pt.lua
-├── 📁 ui/
-│   ├── 🌐 index.html       # Estructura visual (4 pantallas + modal)
-│   ├── 🎨 style.css        # Todo el diseño visual
-│   ├── 📁 img              # Fondos, imágenes de spawn, etc...
-│   │   ├── 🖼️ bg1.jpg
-│   │   ├── 🖼️ bg2.png
-│   │   └── 🖼️ bg3.jpg
-│   ├── 📁 items            # Imagenes de items
-│   │   ├── 🖼️ id_card.png
-│   │   ├── 🖼️ kurkakola.png
-│   │   ├── 🖼️ phone.png
-│   │   ├── 🖼️ sandwich.png
-│   │   ├── 🖼️ tosti.png
-│   │   └── 🖼️ water_bottle.png
-│   └── 📁 js/
-│       ├── 📄 app.js        # Lógica principal del frontend (1480 líneas)
-│       ├── 📄 sounds.js     # Sonidos de interfaz (hover/click)
-│       └── 📄 validators.js # Validación del formulario de creación de personaje
-├── 📄 config.lua            # Toda la configuración del recurso
-├── 📄 fxmanifest.lua        # Manifiesto de FiveM (scripts, ui_page, dependencias)
-└── 📝 readme.md             # Este archivo, donde alojo informacion y cosas a futuro sobre el script
+├── client/
+│   ├── cl_events.lua
+│   ├── cl_intro.lua
+│   ├── cl_main.lua
+│   ├── cl_spawn.lua
+│   └── cl_utils.lua
+├── server/
+│   ├── sv_database.lua
+│   ├── sv_intro.lua
+│   ├── sv_main.lua
+│   ├── sv_spawn.lua
+│   └── sv_utils.lua
+├── locales/                 # sistema.lua y traducciones de/de, en, es, fr, it, pt
+├── ui/
+│   ├── index.html
+│   ├── style.css
+│   ├── img/                  # imágenes de interfaz
+│   ├── items/                # imágenes del carrito inicial
+│   └── js/                   # app, dev, sonidos y validadores
+├── config.lua
+├── fxmanifest.lua
+└── readme.md
 ```
 
-**Dependencia obligatoria:** `qb-core`. También usa `oxmysql` para las queries SQL, y de forma opcional se integra con `qb-clothing`, `DP-Inventory` y `DP-RealMoney` si están presentes.
-
----
-
-## 🧠 Filosofía general del sistema
-
-1. Al conectarse, el jugador **no aparece en el mapa real**: se le teletransporta a una sala oculta bajo el mapa (`Config.HiddenCoords`) y se activa una interfaz NUI a pantalla completa.
-2. En esa sala se generan hasta 7 "peds" (modelos 3D) alineados en fila: uno por cada slot de personaje. Los que ya tienen personaje muestran su skin real; los vacíos muestran una **silueta semitransparente ("sombra")**.
-3. El jugador navega la interfaz (landing → lista de personajes → crear/jugar), y mientras lo hace, una cámara cinemática Lua se mueve/hace zoom en sincronía con lo que ocurre en el NUI.
-4. Al confirmar "Jugar" o "Crear", la UI se cierra, se destruyen los peds de previsualización, y el servidor hace login/registro real en QBCore y hace aparecer al jugador en el mundo.
-
----
+## Diagnóstico
 
-## 🛠️ `config.lua` — Configuración completa
+1. Activa `Config.Debug = true` y `Config.IntroFlow.Debug = true` temporalmente.
+2. Revisa F8 y consola del servidor desde la creación hasta el spawn. Busca la fase que no avanza y el callback de DP-PauseMenu.
+3. Comprueba que DP-PauseMenu y qb-clothing estén iniciados y que el export/evento esperado exista en las versiones instaladas.
+4. Valida coordenadas y colisiones en el juego. No des por válida una ubicación solo porque sea numéricamente correcta.
+5. Para incidencias de spawn, comprueba el identificador `name` y distancia del punto devuelto por el mapa frente a `DynamicSpawnBlips`.
+6. Desactiva los logs de depuración una vez terminadas las pruebas.
 
-| Variable                                                | Tipo                       | Descripción                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Config.Debug`                                          | bool                       | Activa logs `[DP-MultiCharacter Debug]` en consola F8 y en consola del servidor. Útil para depurar sin ensuciar la consola en producción.                                                                                                                               |
-| `Config.Locale`                                         | string                     | Idioma activo (`'es'`, `'en'`, `'it'`, `'fr'`, `'de'`, `'pt'`).                                                                                                                                                                                                         |
-| `Config.ServerName`                                     | string                     | Nombre mostrado en la pantalla cinemática al entrar a jugar.                                                                                                                                                                                                            |
-| `Config.EnableDeleteButton`                             | bool                       | Habilita/deshabilita el borrado de personajes desde la UI.                                                                                                                                                                                                              |
-| `Config.DefaultSlots`                                   | number (1–7)               | Slots gratuitos para todos los jugadores.                                                                                                                                                                                                                               |
-| `Config.CustomSlots`                                    | table `[license] = number` | Slots VIP por licencia Rockstar concreta (sobrescribe `DefaultSlots` para esa licencia).                                                                                                                                                                                |
-| `Config.CommandLogOut`                                  | string                     | Comando de chat para cerrar sesión (`/logout`) y volver al selector.                                                                                                                                                                                                    |
-| `Config.Interior`                                       | vector3                    | Coordenadas del interior que se precarga (`LoadInterior`) para que la sala oculta renderice bien.                                                                                                                                                                       |
-| `Config.HiddenCoords`                                   | vector4                    | Coordenadas reales donde se esconde físicamente al jugador mientras ve el menú.                                                                                                                                                                                         |
-| `Config.PedCoords`                                      | array de vector4 (5)       | Posiciones individuales predefinidas por slot (hasta 7).                                                                                                                                                                                                                |
-| `Config.PedSpacing`                                     | number                     | Separación en el eje Y usada para centrar dinámicamente los peds cuando hay más o menos slots que posiciones fijas.                                                                                                                                                     |
-| `Config.CamCoords`                                      | vector4                    | Posición general de la cámara cinemática (vista amplia de todos los personajes).                                                                                                                                                                                        |
-| `Config.CharactersAnimations`                           | bool                       | Si `true`, los peds en pantalla tendrán animaciones idle en vez de estar estáticos.                                                                                                                                                                                     |
-| `Config.CharactersAnimation`                            | table                      | Diccionario/nombre de animación para estado `idle` y `select`.                                                                                                                                                                                                          |
-| `Config.SpawnPoints`                                    | table                      | `SkipSelection` (bool) + `DefaultSpawn` (vector4) + lista de puntos de spawn con `label`, `description`, `image`, `coords` (para cuando `SkipSelection = false`).                                                                                                       |
-| `Config.StartItemsList`                                 | array                      | Ítems que **debería** recibir un personaje nuevo (actualmente definido pero no consumido directamente por `sv_utils.lua`, que reparte ítems fijos — ver sección de servidor).                                                                                           |
-| `Config.ExportCharacters` / `Config.ImportCharacters`   | bool                       | Activan/desactivan (a nivel de config) los botones de exportar/importar personajes en formato "xmt". **Nota:** en el JS actual estos botones existen en la UI pero muestran `alert("Próximamente disponible")`; la lógica real de exportación aún no está implementada. |
-| `Config.DefaultMaleModel` / `Config.DefaultFemaleModel` | string                     | Modelos base (`mp_m_freemode_01` / `mp_f_freemode_01`).                                                                                                                                                                                                                 |
-| `Config.Nationalities`                                  | array de `{label, id}`     | Lista completa de países (código ISO de 2 letras) usada para el selector de nacionalidad y para pintar banderas vía `flagcdn.com`.                                                                                                                                      |
+Los errores de cliente asociados a carga de mapa/colisión requieren validación dentro de FiveM. El simulador de [ui/js/dev.js](./ui/js/dev.js) solo sirve para revisar la interfaz web y no valida Lua, buckets, tráfico ni streaming del mapa.
 
----
+## 14. Flujo de llegada de personajes nuevos
 
-## ✍️ Personalización rápida
+El flujo se activa con `Config.IntroFlow.Enabled`. El personaje nuevo se crea en QBCore y se inicia la secuencia de intro: traslado al punto de personalización, confirmación de ropa, cinemática, selector DP-PauseMenu y viaje. El estado se conserva en metadatos para permitir una recuperación parcial si se interrumpe.
 
-- **Cambiar idioma**: edita `Config.Locale`.
-- **Cambiar slots gratuitos / VIP**: `Config.DefaultSlots` y `Config.CustomSlots`.
-- **Cambiar ubicación de la sala de selección**: `Config.Interior`, `Config.HiddenCoords`, `Config.PedCoords`, `Config.CamCoords`.
-- **Cambiar sistema de ropa**: edita el evento disparado en `cl_utils.lua` (`openClothing`) y las llamadas a `qb-clothing:client:loadPlayerClothing` en `cl_main.lua`.
-- **Cambiar dinero/ítems de bienvenida**: edita `GiveStarterItems` en `sv_utils.lua` (y opcionalmente conecta `Config.StartItemsList`, que hoy está definido pero no se usa automáticamente).
-- \*\*Activar el selector de spawn para personajes existentes en vez de "última ubicación": pon `SkipSelection = false` dentro de `Config.SpawnPoints`. La intro de personaje nuevo abre siempre el selector de DP-PauseMenu.
+### 14.1 Unificar y validar los puntos de spawn
 
----
+La fuente de puntos es `Config.SpawnPoints.DynamicSpawnBlips`. Durante la carga, esos mismos nombres, etiquetas y coordenadas alimentan `Config.IntroFlow.Destinations`; no mantengas una segunda lista independiente.
 
-## 🧩 Integraciones externas (opcionales)
+El servidor compara la respuesta del mapa con el punto configurado más cercano. Si queda a más de **150 m**, se considera no reconocido y se intenta usar `airport`. Por ello:
 
-| Recurso        | Uso                                                        | Obligatorio                                                 |
-| -------------- | ---------------------------------------------------------- | ----------------------------------------------------------- |
-| `qb-core`      | Framework base (login, personajes, dinero, notificaciones) | ✅ Sí                                                       |
-| `oxmysql`      | Todas las queries SQL                                      | ✅ Sí                                                       |
-| `qb-clothing`  | Cargar y editar la ropa/apariencia del personaje           | Recomendado (se llama directamente por nombre de evento)    |
-| `DP-Inventory` | Entrega de `id_card` y `phone` al crear personaje          | Opcional, falla si no está (revisar `sv_utils.lua`)         |
-| `DP-RealMoney` | Sincroniza HUD de dinero (cash/black_money/crypto)         | Opcional, se detecta automáticamente con `GetResourceState` |
+- conserva un punto llamado `airport` mientras uses esta ruta de reserva;
+- comprueba que DP-PauseMenu devuelva coordenadas próximas a las configuradas;
+- valida cada destino en el juego, en especial puntos dentro de interiores, carreteras o ubicaciones con coordenadas de entrada distintas;
+- si el aeropuerto no existe en la lista, el servidor no podrá aplicar esa reserva correctamente.
 
----
+**Limitación conocida:** una selección que no coincide con los puntos puede enviar al jugador al aeropuerto en vez del destino que esperaba. El sistema hace una aproximación por distancia, no identifica el blip seleccionado mediante un ID compartido.
 
-## 🚧 Pendientes por implementar
+### 14.2 Personalización inicial y coordenada de pruebas
 
-Lista de trabajo abierta: funcionalidades que hoy están solo como maqueta visual (placeholders, `alert("Próximamente disponible")`, botones sin lógica) o que directamente aún no existen, ordenadas para abordarlas más adelante. Cada punto describe el comportamiento final esperado.
+La coordenada configurada para la prueba es `vector4(713.84, -961.53, 30.39, 180.0)`, en la fábrica de Lester. El cliente mantiene la pantalla negra durante la carga de escena/colisión y abre qb-clothing después de comprobar el resultado del streaming.
 
-### 1. Comprar Slots
+La ubicación es provisional: confirma en el servidor que la posición esté dentro del taller/interior esperado y que la versión de qb-clothing reciba la llamada de apertura y confirmación compatible. No se debe asumir que otra instalación de ropa usa los mismos eventos.
 
-Debe ser funcional de verdad, con dos modos configurables desde `config.lua` (a elección del dueño del servidor):
+**Limitación conocida:** se han reportado apariciones fuera del lugar previsto, invisibilidad y problemas al completar la creación. El flujo contiene esperas de streaming acotadas, pero eso no sustituye una prueba en el mapa y con los recursos reales.
 
-- **Modo "Coins/VIP in-game"**: se paga con un sistema de monedas ya existente en el servidor. El admin indica en el config el nombre del script de coins:
-  - Si es uno de los sistemas ya soportados por `DP-MultiCharacter` de fábrica, basta con poner su nombre.
-  - Si es un sistema **custom** propio del servidor, el admin deberá añadir manualmente la integración en `client`/`server` (dejar preparado el punto de enganche, claramente señalado en el código).
-- **Modo "URL externa (Google Form / tienda web, etc.)"**: el modal simplemente enlaza a una URL de compra externa; la asignación real de los slots comprados la hace el admin **manualmente** desde archivos/BD tras recibir el pago.
+### 14.3 Cinemática y selector DP-PauseMenu
 
-### 2. Exportar Personaje (funcional)
+Al confirmar la ropa, el cliente realiza un zoom óptico desde la ubicación de personalización, funde a negro gradualmente y, tras la espera configurada, abre el mapa. No está previsto saltar la cinemática con una tecla.
 
-- Encima del recuadro de "código generado", mostrar una lista de los personajes disponibles del usuario, **cada uno con un checkbox**. El usuario debe poder seleccionar entre **2 y 7 personajes** (mínimo 2, máximo 7 = límite máximo de slots del sistema) para exportar de una vez.
-- El código generado (en JSON o XML, según el toggle) debe incluir el **detalle completo** de cada personaje seleccionado:
-  - ID único de exportación (para poder verificarlo luego al importar).
-  - CitizenID, nombre, apellidos, fecha de nacimiento, nacionalidad, género.
-  - Economía: dinero en efectivo y en banco.
-  - Teléfono.
-  - Afiliaciones: trabajo, rango, bandas, si es jefe/líder.
-  - Actividad: tiempo jugado, última conexión.
-  - Apariencia/personaje: ropa, última ubicación de spawn, cara, tono de piel, pelo, accesorios, etc. — todo.
-  - Slot que ocupaba.
-- Crear en base de datos una tabla nueva, **`exportacion_multicharacters`**, que guarde estos datos exportados junto a su ID único.
-- Botón de "Copiar" debe quedar plenamente funcional (ya lo está a nivel UI, falta el contenido real).
+DP-MultiCharacter administra el estado de la intro; DP-PauseMenu presenta el mapa. La selección se reenvía al servidor para validar el destino y comenzar el trayecto. Si el export no está disponible o falla, la ruta normal intenta usar el spawn de reserva; la intro requiere diagnóstico si no llega un callback válido.
 
-### 3. Importar Personaje (funcional)
+### 14.4 Taxi, controles y HUD
 
-- Al pegar el código y pulsar "Importar", el sistema debe:
-  1. Buscar en la base de datos (`exportacion_multicharacters`) el registro cuyo ID único coincida (formato: 10 caracteres alfanuméricos, ej. `1G51E3KKA0`).
-  2. Verificar que el contenido no haya sido alterado/corrompido respecto al guardado originalmente.
-  3. Si es válido, crear ese personaje en la lista de personajes del usuario que importa, asociado a **su propia license**, con todos los datos tal cual se exportaron.
-- Caso de uso: un jugador crea y exporta un personaje, se lo pasa a un amigo (Discord, etc.), y al importarlo, el amigo recibe una copia jugable de ese personaje asociada a su cuenta.
-- El personaje exportado sigue existiendo también para quien lo exportó; si quiere borrarlo de su propia lista, es decisión suya (borrado normal). Pero **una vez exportado, el registro en `exportacion_multicharacters` no se puede eliminar desde la UI** — solo el owner del servidor puede borrarlo manualmente desde la base de datos.
+El taxi es creado por el cliente en el bucket de la intro. El personaje camina hasta él, intenta subir al asiento trasero y el conductor recibe la ruta al destino. Los controles registrados mediante key mappings son:
 
-### 5. Reportar Bug (funcional + integración con DP-AdminMenu)
+| Tecla inicial | Acción |
+|---|---|
+| `G` | Solicitar una conversación breve con el taxista |
+| `R` | Alternar la prisa |
+| `E` | Cambiar a otro destino permitido |
+| `Backspace` | Solicitar una parada segura |
 
-- El mensaje que escriba el usuario debe llegar a los administradores a través de `DP-AdminMenu`, soportando tanto texto como imágenes adjuntas.
-- Crear un comando configurable en `config.lua`, por ejemplo `/restart-ui [ID del jugador]`, que permita a un admin **reiniciar el script de `DP-MultiCharacter` únicamente para ese jugador concreto** (quitárselo y volver a cargárselo), útil cuando a alguien se le ha bugueado la interfaz o no le cargan cosas correctamente.
-- Dejar la puerta abierta a añadir más herramientas de soporte para administradores en el futuro.
+Las teclas se pueden cambiar desde los ajustes de key bindings de FiveM. La parada está sujeta a un tiempo mínimo y a validación del servidor; el cobro depende del trayecto calculado y del dinero disponible.
 
-### 6. Exportar individual desde la tabla de Opciones
+**Incidencias comunicadas por probar/corregir:** se ha observado que `R` puede coincidir con una acción no deseada o provocar conducción en sentido extraño, y que `Backspace` puede finalizar el trayecto de forma abrupta. El código actual registra comandos dedicados y solicita la parada al servidor, pero hace falta repetir estas pruebas en el juego y revisar conflictos de key bindings/recursos antes de declarar los controles estables.
 
-El botón de exportar de cada fila en la tabla debe abrir el **mismo modal** de Exportar/Importar, pero en una variante simplificada: sin el selector de personajes (checklist), ya que aplica únicamente al personaje de esa fila concreta. Solo debe mostrar el selector de Formato (JSON/XML) y el recuadro de código generado con todos los datos de ese personaje.
+El panel NUI del taxi se activa después del intento de entrada al vehículo en el código actual. Aun así, se ha reportado que aparece antes de que el jugador esté sentado: verificarlo en vivo y no confundirlo con paneles de otros recursos. El minimapa, HUD, vídeos u otras NUI externas no están todos bajo el control de este recurso.
 
-### 9. Completar todos los locales (traducción íntegra)
+### 14.5 Precio y reglas del trayecto
 
-Revisar `locales/es.lua` y el resto de idiomas (`en`, `fr`, `it`, `de`, `pt`) para que **absolutamente todo el texto del script** pase por el sistema de traducciones (`_U()` / `data-trans`) — sin textos sueltos hardcodeados en español directamente en el HTML/JS/CLIENTS/SERVERS que se queden sin traducir al cambiar `Config.Locale` (Incluidos los Prints/Console.logs).
+La configuración controla tarifa base, precio por distancia, mínimo/máximo y recargo por prisa. El servidor aplica la tarifa al completar o interrumpir una carrera y limita cambios de destino, frecuencia de prisa, tiempo de atasco y duración máxima. El modo actual es privado: no se integra el taxi en el tráfico público.
 
-### 10. Seguridad — Anti-duplicación en Importar Personaje
+La distancia recorrida se calcula entre coordenadas de inicio y final, no como una medición exacta de cada tramo de carretera. Ajusta los precios a esa limitación y pruébalos con los destinos largos.
 
-Cuando se implemente el punto 4, contemplar el caso de que el **mismo código de importación se use varias veces** (por el mismo usuario o por usuarios distintos a la vez, ej. dos personas pegando el código casi simultáneamente). Definir en `config.lua` si un mismo ID de exportación se puede importar una única vez en total, un número limitado de veces, o de forma ilimitada — y aplicarlo con un lock/transacción en `sv_database.lua` para que no se puedan colar dos importaciones simultáneas del mismo código antes de que la primera termine de procesarse.
+### 14.6 Aislamiento, salud y depuración
 
-### 11. Gestión — Marcar personaje como favorito
+El servidor asigna buckets para aislar intros concurrentes y mantiene una cola limitada. Durante el flujo, el cliente oculta el HUD/radar de GTA controlable por este recurso, congela o protege al personaje según la fase y registra las transiciones cuando el debug está activo.
 
-El botón "Marcar como favorito" existe visualmente en el roadmap pero no está desarrollado como punto propio. Al marcarlo, ese personaje debe aparecer destacado visualmente en la lista de "Personajes" (por ejemplo con una estrella o borde distinto) y ordenarse primero por defecto en la tabla de Opciones. Guardar el estado de favorito en base de datos (metadata o tabla nueva), asociado al `citizenid`.
+Esto no puede ocultar de forma universal NUI de terceros. Cada HUD, minimapa personalizado, vídeo o overlay externo puede requerir una integración propia. El log de DP-MultiCharacter ayuda a localizar la fase, pero no demuestra por sí solo que taxi, UI o spawn hayan finalizado correctamente.
 
-### 13. Administración — Panel de estadísticas globales del servidor (server-side)
+### 14.7 Trabajo pendiente antes de dar el flujo por cerrado
 
-Crear un comando o export pensado para administradores (o integrable en `DP-AdminMenu`) que devuelva estadísticas agregadas del sistema de personajes: número total de personajes activos en el servidor, media de slots usados por jugador, personajes creados en las últimas 24h/7 días, y personajes actualmente en `PROCESO_ELIMINACION` (ver punto 2) pendientes de purga.
+- Confirmar en una sesión real que todos los puntos dinámicos se reconocen y que la ruta de reserva al aeropuerto es clara.
+- Corregir y volver a probar la orientación del taxi, los controles de prisa/parada y la salida/desaparición del vehículo.
+- Verificar que el panel de taxi solo se vea una vez que el jugador esté sentado.
+- Coordinar la ocultación de HUD, minimapa, vídeos y otras NUI de recursos externos.
+- Probar en servidor real la coordenada provisional de Lester, el flujo de qb-clothing, visibilidad del ped, estado de salud y carga de colisión.
+- Reproducir y diagnosticar los crashes/errores de streaming reportados (incluido `MapDataLoadedNode Pool Full`) con logs completos y recursos/versiones del servidor.
 
-### 14. Flujo de primera entrada: Tailor Room → cinemática → selector de spawn → taxi
+No se incluyen aquí como funciones terminadas diálogos avanzados, radio, tutoriales de bienvenida ni compra de apartamentos desde el taxi: no están implementados en el flujo actual.
 
-Flujo completo, 100% scripteado, que se ejecuta **solo la primera vez que un personaje nuevo entra al mundo** (se marca en `metadata.introDone` para que, al volver a seleccionar ese personaje, no se repita la intro y se use el spawn normal / última posición). Todo el control de estados vive en el **servidor**; el cliente solo ejecuta cámara, animaciones y UI.
+## Capturas pendientes
 
-#### 14.1 Fase 1 · Creación en la Tailor Room (instancia privada)
+Añade aquí capturas tomadas en el servidor real. Evita mostrar licencias, CitizenID de usuarios, datos personales o información administrativa sensible.
 
-- Al confirmar "Crear", el jugador es teletransportado a la **Tailor Room** (sala de creación de apariencia con `qb-clothing`).
-- **Aislamiento total**: cada jugador se mueve a un **routing bucket propio y único** (`SetPlayerRoutingBucket`). Nadie ve a nadie; cada jugador solo se ve a sí mismo.
-  - Los buckets se asignan desde un pool controlado (ej. a partir de un offset configurable, `Config.IntroBucketStart`) para no chocar con buckets de otros scripts, y se liberan siempre al terminar el flujo.
-  - Desactivar población ambiental en ese bucket (`SetRoutingBucketPopulationEnabled`) mientras esté en la Tailor Room.
-- Estado de seguridad: jugador **invencible, congelado y sin control del HUD/chat/teléfono/movimiento** durante toda la intro. Bloquear comandos y teclas que puedan sacarlo del flujo (inventario, menú de pausa, etc.).
-- Si el jugador **se desconecta o crashea** en cualquier punto del flujo: limpiar bucket, borrar entidades (taxi/NPC) y, al reconectar, retomar en el último estado válido guardado (`metadata.introStep`) en vez de dejarlo bugueado.
-
-#### 14.2 Fase 2 · Cinemática de llegada
-
-- Al terminar la creación se lanza la cinemática del **personaje recién creado**: llegada a la ciudad → zoom óptico desde la Tailor Room → fundido a negro. El zoom mantiene la cámara dentro del interior para evitar que el streaming en altura agote `MapDataLoadedNode`.
-- Al terminar el fundido, se abre el **selector de spawn** (DP-PauseMenu).
-- Mejoras a contemplar:
-  - Música/ambiente sonoro y efectos (motores del avión, anuncio de megafonía) configurables en `config.lua`, con `Config.IntroCinematic.Enabled` para poder desactivarla.
-  - **Botón de saltar cinemática** (ej. tecla `Espacio` mantenida 1,5 s), configurable, por si el servidor la quiere obligatoria o no.
-  - Si algo falla en la cinemática (timeout / error), pasar directamente al selector de spawn en lugar de dejar al jugador atascado.
-
-#### 14.3 Fase 3 · Selector de spawn (con la lógica de cada opción)
-
-Los puntos disponibles salen de `Config.SpawnPoints`. Los destinos iniciales del flujo:
-
-| Destino             | Método de llegada                                    |
-| ------------------- | ---------------------------------------------------- |
-| ✈️ Aeropuerto       | Sale caminando de la terminal (secuencia scripteada) |
-| 🚗 Concesionario    | Taxi                                                 |
-| 🏖️ Gym Playa        | Taxi                                                 |
-| 🏥 Hospital         | Taxi                                                 |
-| 👮 Comisaría        | Taxi                                                 |
-| 💼 Centro de empleo | Taxi                                                 |
-| 🏢 Apartamentos     | Taxi                                                 |
-
-**A) Spawn en el aeropuerto**
-
-1. El jugador aparece en la terminal y realiza una **secuencia de caminata scripteada** (`TaskGoStraightToCoord` / `TaskFollowNavMeshToCoord`) hasta la salida.
-2. Al terminar, se le **devuelve el control**, se le quita la invencibilidad y se restaura su **bucket por defecto (0)**.
-
-**B) Spawn en cualquier otro sitio (taxi)**
-
-1. El jugador **sigue en su bucket privado** mientras dura todo el trayecto.
-2. Sale de la terminal igual que en el aeropuerto, y se **llama automáticamente a un taxi** (toda la secuencia scripteada: levanta la mano llamado a un taxi cercano, el taxi llega, para frente al jugador, este sube de forma animada como pasajero en uno de los asientos traseros).
-3. El **taxista NPC** conduce hasta el destino elegido **respetando señales, semáforos, tráfico y el resto de jugadores de la ciudad**.
-   - Ojo técnico: como el jugador va en un bucket privado, **no existe tráfico ni jugadores reales en su instancia**. Dos opciones, a decidir en `config.lua` (`Config.TaxiTrafficMode`):
-     - `"private"`: trayecto aislado, sin tráfico real, más estable y barato en rendimiento (el "tráfico" es solo estético/cinemático).
-     - `"world"`: el jugador y el taxi pasan al bucket 0 durante el trayecto (con el jugador invencible y el taxi protegido), para que el trayecto sea con tráfico y jugadores reales. Más realista, pero más propenso a bugs/trolleos.
-   - Estilo de conducción configurable (flags de `SetDriveTaskDrivingStyle`) y velocidad máxima normal/moderada vs. con prisa.
-4. **Llegada**: el taxi para a un lado de la acera junto al destino, le cobra el $ del trayecto desde el aeropuerto al destino, el jugador baja, **se da la vuelta como mirando a su alrededor** y el taxi se aleja. Cuando el taxi sale de la zona (distancia configurable), se **despawnea**.
-5. Se le **devuelve el control**, se quita la invencibilidad y se cambia al **bucket por defecto (0)**.
-
-#### 14.4 UI/NUI del taxi (aparece a mitad del trayecto)
-Panel inferior con las acciones disponibles; los atajos se pueden reasignar desde la configuración de teclas de FiveM:
-
-| Tecla         | Acción           | Comportamiento                                                                                                                                                                                                                                                                   |
-| ------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **G**         | Conversar        | Abre un menú de preguntas y respuestas con el taxista. Primera versión: **conversación genérica** (mismas preguntas para todos). Ya se verá si se enlaza con el futuro **script de diálogos**.                                                                                   |
-| **R**         | Meter prisa      | El NPC acelera y conduce de forma agresiva: **ignora señales y semáforos**, pero **sigue evitando choques con otros vehículos**.                                                                                                                                                 |
-| **E**         | Cambiar destino  | Abre un **menú lateral** con los destinos; al elegir, **elimina el blip/GPS del destino anterior** y **marca el nuevo**. Recalcula ruta y tarifa extra por cambiarlo.                                                                                                            |
-| **Backspace** | Solicitar parada | Deshabilitar la tecla F aqui, y debe solicitar el bajarse del taxi, **se detiene a un lado, sobre la acera**; se cobra la tarifa **proporcional al tramo recorrido** (no el total). Al cobrar, el taxi se aleja, se despawnea y el jugador pasa al bucket 0, sin invencibilidad. |
-
-**Detalles de cada acción:**
-
-- **Conversar (G)**:
-  - Diálogos vía `locales/` para que también estén traducidos.
-  - Ideas para ampliarlo: respuestas aleatorias de un pool por pregunta, frases distintas según el destino o la hora del día, y alguna "pregunta secreta" con lore o pistas del servidor (normas básicas, dónde está cada sitio, etc.).
-- **Alternar prisa/normal (R)**:
-  - Idea: posibilidad de **cobrar un pequeño extra** por la "carrera urgente" (configurable, `Config.Taxi.RushSurcharge`) y/o dar una **propina opcional**.
-  - Añadir un cooldown para que no se pueda spamear y que la tecla se pueda desactivar desde el config.
-- **Cambiar destino (E)**:
-  - El menú debe mostrar el destino actual y no dejar seleccionar el ya seleccionado indicado.
-  - En el mismo trayecto maximo 3 cambios (1 que es el destino original + 2 cambios disponibles) con cooldown entre ellos, y un indicador de restantes disponibles.
-- **Solicitar parada (Backspace)**:
-  - La tarifa se calcula **en el servidor**, nunca en el cliente: `tarifa = tarifaBase + (distanciaRecorrida × precioPorMetro)` (o proporcional: `tarifaTotal × (recorrido / distanciaTotal)`), con mínimo y máximo configurables.
-  - El NPC debe detenerse en un punto seguro (acera / carril lateral), nunca en mitad de un cruce,carretera.
-
-#### 14.5 Robustez y anti-exploits (a tener en cuenta desde el principio)
-
-- **Servidor autoritativo**: el servidor decide el destino, la tarifa y cuándo termina cada fase; el cliente solo la solicita. Validar todos los eventos (que el jugador realmente esté en fase de taxi, que el destino exista en `Config.SpawnPoints`, etc.).
-- **Taxi atascado**: si el vehículo no avanza durante X segundos, o no llega en Y minutos, mecanismo de recuperación (recalcular ruta → teletransportar cerca del destino con fundido a negro → último recurso: spawn directo en el destino).
-- **Limpieza garantizada** de taxi + NPC + bucket en todos los casos (fin normal, desconexión, reinicio del recurso, error). Un `onResourceStop` que recorra el estado activo y lo restaure.
-- Que nadie pueda **robar o bajarse del taxi** a mitad del flujo (puertas bloqueadas, `SetPedCanBeDraggedOut(false)`, etc.).
-- El jugador **no puede morir ni recibir daño** durante la intro; además, el HUD/blips ajenos quedan ocultos.
-- Guardar el **progreso del flujo** (`introStep`) para poder retomarlo si hay un corte.
-- **Logs** (`Config.IntroFlow.Debug`) de cada fase para depurar fácilmente.
-- Rendimiento: un solo taxi por jugador, 7 tipos de taxis, total aletoriedad, configurable cada uno y la probabilidad de aparecer x taxi, límite de intros simultáneas configurable si el servidor se llena (cola de espera).
-
-#### 14.6 Configuración (`config.lua`)
-
-```lua
-Config.IntroFlow = {
-    Enabled = true,
-    Debug = true, -- Logs del flujo en F8 y consola del servidor
-    TailorRoomCoords = vector4(713.84, -961.53, 30.39, 180.0), -- Fábrica de Lester (DP-AdminMenu)
-    BucketStart = 5000,
-    MaxConcurrent = 16,
-    MaxQueue = 64,
-    Destinations = {} -- Se genera desde Config.SpawnPoints.DynamicSpawnBlips
-}
-
-Config.Taxi = {
-    Models = { { model = 'taxi', chance = 100 } }, -- la configuracion incluye siete modelos
-    DriverModel = 's_m_m_gentransport',
-    TrafficMode = 'private',
-    BasePrice = 50,
-    PricePerMeter = 0.15,
-    MinFare = 25,
-    MaxFare = 2500,
-    RushSurcharge = 5,
-    MaxDestinationChanges = 2,
-    DestinationChangeCooldown = 10,
-    StuckTimeout = 30,
-    TripTimeout = 900,
-}
-```
-
-**Estado de esta implementación:** DP-MultiCharacter conserva el estado y los buckets de la intro en el servidor; para mostrar el mapa reutiliza el export `OpenSpawnSelectorWithApartments` de DP-PauseMenu. Los buckets concurrentes y el máximo de espera se regulan con `MaxConcurrent`/`MaxQueue`. Los destinos válidos se resuelven desde `Config.IntroFlow.Destinations`; una selección fuera de esos puntos cae al aeropuerto. El taxi es una entidad local en el bucket privado, con panel NUI y controles G/R/E/Backspace registrados como atajos independientes; el cobro y la validación del destino se hacen en el servidor. El jugador viaja en el asiento trasero del lado del pasajero y las teclas nativas de salida quedan bloqueadas durante el trayecto. La prisa solo cambia la velocidad máxima, sin reiniciar la ruta del conductor. Al pedir parada, el taxi busca un punto de carretera por delante, deja salir al jugador, cobra el tramo recorrido y se aleja antes de desaparecer. `TrafficMode` está fijado a `private` en esta primera versión; no se cambia al bucket público durante la carrera. Para un personaje nuevo, `qb-clothing` aplica el aspecto base en ropa interior y, al confirmar, notifica a DP-MultiCharacter para continuar la cinemática y el selector; cancelar no avanza el flujo. Al iniciar se restaura la visibilidad y se asignan vida, armadura y necesidades completas. Si una intro se interrumpe, el siguiente inicio del personaje vuelve al selector de spawn.
-
-La cámara hace un zoom óptico desde la Tailor Room, funde gradualmente a negro y espera 2,5 segundos antes de abrir el selector; no se mueve a gran altitud ni se puede saltar. Al iniciar la intro se ocultan la UI de selección, los peds de previsualización, la cámara y su hilo de densidad antes de pasar al servidor. La personalización usa las coordenadas de la Fábrica de Lester de DP-AdminMenu. La pantalla permanece negra mientras se solicita la escena y la colisión del destino; qb-clothing solo se abre cuando ambas están listas. `Config.IntroFlow.Destinations` se genera desde `Config.SpawnPoints.DynamicSpawnBlips`, por lo que ambos selectores comparten puntos y coordenadas; todos esos puntos inician el viaje en taxi. El personaje camina hasta el taxi antes de subir. `TripTimeout` es de 900 segundos para permitir viajes largos como Paleto Bay. Con `Config.IntroFlow.Debug = true` (activado para esta depuración) se registran las fases y la respuesta de DP-PauseMenu en F8 y en la consola del servidor. No crea un avión físico ni reproduce sonido (`SoundEnabled` queda apagado). Los teleports cargan únicamente una escena acotada en las coordenadas destino y no usan el salto de 500 m, que puede agotar el pool de nodos del mapa.
-
-#### 14.7 Futuras ideas
-
-- Taxista con personalidad/nombre aleatorio y diálogos propios.
-- Radio del taxi con emisoras seleccionables durante el trayecto.
-- Salida por defecto del aeropuerto en taxi o en transporte público (bus/metro) como alternativas más baratas.
-- Destinos adicionales configurables por el admin directamente en `Config.SpawnPoints` (cada uno con su propio punto de bajada).
-- Misión/guía de bienvenida al terminar la intro: marcar en el mapa los sitios clave (empleo, concesionario, hospital) como tutorial.
-- Quitar lo de aparecer en apartamento o comprarlo, que salgan todos los apartamentos, disponibles, cuando llegue a uno de ellos en taxi, pueda comprar una habitación.
-
----
-
-### A. Experiencia de usuario (UI/NUI)
-
-- **Landing con noticias del servidor**: bloque configurable con novedades, eventos y changelog (texto y/o imagen), editable desde `config.lua` o desde un panel admin.
-- **Estados de carga** (_skeleton loaders_) y transiciones suaves para que la UI nunca parezca congelada mientras cargan los peds.
-
-### B. Creación de personaje
-
-- **Validaciones más estrictas**: lista negra de nombres/apellidos (famosos, insultos, "Test Test"…), formato (mayúscula inicial, sin números ni emojis), rango de edad mínima/máxima y fecha de nacimiento coherente.
-- **Unicidad opcional** de nombre + apellidos para evitar personajes idénticos.
-- **Biografía / trasfondo opcional**: texto corto de historia que se muestra en la ficha del personaje.
-
-### C. Seguridad y anti-abuso
-
-- **Bloqueo de personaje en uso**: que el mismo personaje no pueda estar cargado en dos jugadores/sesiones a la vez (lock por `citizenid`).
-- **Borrado seguro con periodo de gracia** (relacionado con `PROCESO_ELIMINACION`): el personaje no se purga al instante, se puede restaurar durante X días y el borrado requiere confirmar escribiendo el nombre del personaje.
-- **Tabla de auditoría** (`multichar_logs`) con eventos importantes para revisar sanciones o disputas.
-- **CK (Character Kill)**: permitir que un admin marque un personaje como fallecido permanentemente. Pasa a verse como "💀 Fallecido" en la lista, queda archivado y deja de ser jugable (sin borrar su historial).
-- **Bloqueo administrativo de personaje**, por ejemplo por sanción, mientras se resuelve un caso.
-
-### D. Rendimiento
-
-- **Carga diferida (lazy load)** de las skins pesadas: cargar primero las tarjetas y los peds visibles, y completar el resto de forma asíncrona.
-- **Liberar recursos** siempre: `SetModelAsNoLongerNeeded`, borrado de peds de previsualización, cierre de cámaras y `RemoveAnimDict`.
-- **Bucles inactivos**: ningún `while true` ni `Wait(0)` cuando la UI no está abierta (objetivo: ~0.00 ms en idle).
-
-### E. Sesión y flujo de juego
-
-- **`/logout` más robusto**: guardar el estado antes de salir, con cooldown y bloqueos (muerto, esposado, en combate, dentro de un vehículo, en mitad de una acción).
-- **Cambio de personaje sin salir del servidor**, con fundido a negro y limpieza completa del estado del anterior.
-- **Botón "Cambiar de personaje"** accesible desde el menú de pausa.
-- **Autoguardado periódico** y guardado garantizado en `playerDropped` (posición, vida, armadura, necesidades, inventario y apariencia).
-- **Reglas de spawn inteligentes**: si el personaje murió, aparecer en el hospital; si tiene una propiedad (casa/habitación), ofrecerla como punto de spawn; si no, su última posición.
-
-### F. Integraciones y API para otros scripts
-
-- **Eventos públicos** para que otros recursos reaccionen: `DP-MultiCharacter:characterCreated`, `characterSelected`, `characterLogout` y `characterDeleted`.
-- **Capa _bridge_ (adaptadores)** para inventario (`DP-Inventory`, `ox_inventory`, `qb-inventory`), ropa (`qb-clothing`, `illenium-appearance`) y apartamentos, con un único punto de configuración en vez de llamadas directas por nombre de evento.
-- **Slots por rol de Discord**: asignar slots VIP automáticamente según los roles del jugador, sin editar `Config.CustomSlots` a mano.
-- **Integración con `DP-AdminMenu`**: ver/editar personajes de un jugador, restaurar eliminados, marcar CK, cambiar slots y consultar el historial de actividad.
-
-### G. Herramientas de administración
-
-- **Slots VIP en base de datos** (`multichar_slots`) en lugar de `Config.CustomSlots`, para poder cambiarlos en caliente sin reiniciar el recurso.
-- **Comandos admin** de ejemplo: `/multichar-list [id]`, `/multichar-restore [citizenid]`, `/multichar-setslots [license] [n]`, `/multichar-ck [citizenid]` y el `/restart-ui [id]` ya planteado en el punto 5.
-- **Auto-migración SQL**: crear las tablas (`CREATE TABLE IF NOT EXISTS`) al iniciar y guardar una versión del esquema para poder actualizar sin hacerlo a mano.
-- **Comando de diagnóstico** (`/multichar-diag`): comprueba dependencias, tablas, locales incompletos y valores erróneos del `config.lua`, y muestra un informe en consola.
-- **Aviso de nueva versión** (consulta opcional al repositorio de GitHub al iniciar).
-
-### H. Documentación y mantenimiento del proyecto
-
-- **Instalación paso a paso** en el README: dependencias, orden en `server.cfg`, SQL a importar y configuración mínima.
-- **FAQ y _troubleshooting_**: problemas comunes (UI en negro, peds invisibles, personaje que no guarda...) y cómo resolverlos.
-- **Changelog** con versionado semántico (`1.0.0`, `1.1.0`...).
-- **Carpeta `shared/`** para constantes y enums (estados de intro, tipos de evento) y **`bridge/`** para los adaptadores.
-- **Puntos de enganche señalados** en el código con comentarios `-- HOOK:` para que cualquier admin sepa dónde integrar su propio script.
-- **Checklist de pruebas manuales** antes de cada versión (crear, borrar, cambiar de personaje, `/logout`, reinicio del recurso, desconexión a mitad de intro).
-- **Capturas de pantalla / GIFs** de cada pantalla de la UI en el README.
+<!-- CAPTURA PENDIENTE: pantalla de inicio y selector de personajes. -->
+<!-- CAPTURA PENDIENTE: ficha de personaje y pantalla de opciones. -->
+<!-- CAPTURA PENDIENTE: formulario de creación y selección de artículos iniciales. -->
+<!-- CAPTURA PENDIENTE: qb-clothing en la ubicación de pruebas de Lester. -->
+<!-- CAPTURA PENDIENTE: selector de spawn de DP-PauseMenu. -->
+<!-- CAPTURA PENDIENTE: taxi con controles/HUD durante el trayecto. -->
