@@ -34,6 +34,8 @@ files {
     
     'ui/*.css',
     'ui/js/*.js',
+    'ui/lib/*.js',
+    'ui/lib/*.css',
     'ui/img/*.jpg',
     'ui/img/*.png',
     'ui/items/*.png',

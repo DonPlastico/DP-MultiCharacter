@@ -82,6 +82,25 @@ Config.SpawnPoints = {
     SkipSelection = false, -- Si es true, spawnea en su última ubicación registrada si no hay script de apartamentos
     DefaultSpawn = vector4(-1046.02, -2751.97, 21.36, 326.05), -- Spawn de emergencia
 
+    -- ==========================================
+    -- ZONAS PESADAS (evitan el crash "MapDataLoadedNode Pool Full")
+    -- ==========================================
+    -- Si el spawn cae dentro de una zona, el jugador no aparece de golpe: se le
+    -- acerca poco a poco (HeavyZoneMode = "approach") o aparece en un punto ligero
+    -- cercano (HeavyZoneMode = "safe").
+    HeavyZoneMode = "approach", -- "approach" o "safe"
+    ApproachStep = 12.0, -- metros por paso
+    ApproachWait = 250, -- ms entre pasos
+    ApproachDistance = 350.0, -- distancia de partida si la zona no tiene "stage"
+
+    HeavyZones = {{
+        name = "mrpd",
+        center = vector3(415.77, -970.74, 29.45),
+        radius = 300.0
+        -- stage = vector3(0.0, 0.0, 0.0),    -- (opcional) punto LIGERO de partida para "approach"
+        -- safe = vector4(0.0, 0.0, 0.0, 0.0) -- (opcional) punto LIGERO para el modo "safe"
+    }},
+
     -- Habilita la opción "Última ubicación" como primera tarjeta del carrusel
     -- (solo aplica cuando el jugador ya tiene una posición guardada, ej. tras /logout).
     EnableLastLocation = true,

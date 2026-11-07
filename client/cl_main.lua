@@ -362,6 +362,73 @@ local function DecodePosition(position)
     return position
 end
 
+-- =====================================================================
+-- 🧱 ZONAS PESADAS (MLOs/mapeados que llenan el pool MapDataLoadedNode)
+-- =====================================================================
+-- "Pool Full, Size == 1100" es un límite de ENTRADAS de map data cargadas a la vez.
+-- Aparecer de golpe en una zona con muchos MLO/ymap lo desborda; llegar poco a poco
+-- (como con noclip) deja que el streaming cargue y descargue gradualmente.
+-- Se puede sobrescribir en config.lua con Config.SpawnPoints.HeavyZones.
+local function GetHeavyZones()
+    return Config.SpawnPoints.HeavyZones or {{
+        name = "mrpd",
+        center = vector3(415.77, -970.74, 29.45),
+        radius = 300.0
+    }}
+end
+
+local function FindHeavyZone(x, y)
+    for _, zone in ipairs(GetHeavyZones()) do
+        local d = #(vector2(x, y) - vector2(zone.center.x, zone.center.y))
+        if d <= (zone.radius or 300.0) then
+            return zone
+        end
+    end
+    return nil
+end
+
+-- Libera la sala oculta del multicharacter para no arrastrar sus nodos de map data.
+local function ReleaseHiddenRoom()
+    local interior = GetInteriorAtCoords(Config.Interior.x, Config.Interior.y, Config.Interior.z - 18.9)
+    if interior ~= 0 then
+        UnpinInterior(interior)
+    end
+end
+
+-- Mueve al ped (oculto y congelado) desde un punto de partida hasta el destino en
+-- pasos pequeños, simulando que el jugador llega andando.
+local function StagedApproach(ped, zone, x, y, z)
+    local sp = Config.SpawnPoints
+    local stepMeters = sp.ApproachStep or 12.0
+    local stepWait = sp.ApproachWait or 250
+    local stageDist = sp.ApproachDistance or 350.0
+
+    local sx, sy, sz
+    if zone.stage then
+        sx, sy, sz = zone.stage.x, zone.stage.y, zone.stage.z or z
+    else
+        sx, sy, sz = x, y - stageDist, z
+    end
+
+    local total = #(vector2(x, y) - vector2(sx, sy))
+    local steps = math.max(1, math.ceil(total / stepMeters))
+    DebugPrint(("Aproximación escalonada: %d pasos desde %.1f %.1f hasta %.1f %.1f."):format(steps, sx, sy, x, y))
+
+    SetEntityCoordsNoOffset(ped, sx, sy, sz + 30.0, false, false, false, true)
+    RequestCollisionAtCoord(sx, sy, sz)
+    Wait(stepWait * 4)
+
+    for i = 1, steps do
+        local f = i / steps
+        local cx = sx + (x - sx) * f
+        local cy = sy + (y - sy) * f
+        local cz = sz + (z - sz) * f
+        SetEntityCoordsNoOffset(ped, cx, cy, cz + 30.0, false, false, false, true)
+        RequestCollisionAtCoord(cx, cy, cz)
+        Wait(stepWait)
+    end
+end
+
 -- Spawnea en el destino mientras mantiene al jugador oculto durante la carga de colisiones.
 RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, cData)
     local ped = PlayerPedId()
@@ -371,10 +438,10 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
         coords = Config.SpawnPoints.DefaultSpawn
     end
     local x, y, z = tonumber(coords.x), tonumber(coords.y), tonumber(coords.z)
-    if not x or not y or not z or x ~= x or y ~= y or z ~= z or
-        math.abs(x) > 10000 or math.abs(y) > 10000 or z < -200 or z > 2000 then
-        DebugPrint(("Coordenadas de spawn inválidas (%s, %s, %s); usando el spawn por defecto."):format(
-            tostring(coords.x), tostring(coords.y), tostring(coords.z)))
+    if not x or not y or not z or x ~= x or y ~= y or z ~= z or math.abs(x) > 10000 or math.abs(y) > 10000 or z < -200 or
+        z > 2000 then
+        DebugPrint(("Coordenadas de spawn inválidas (%s, %s, %s); usando el spawn por defecto."):format(tostring(
+            coords.x), tostring(coords.y), tostring(coords.z)))
         coords = Config.SpawnPoints.DefaultSpawn
         x, y, z = coords.x, coords.y, coords.z
     end
@@ -386,8 +453,7 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
         x, y, z = coords.x, coords.y, coords.z
     end
     local heading = tonumber(coords.w or coords.h or coords.a or coords.heading) or 0.0
-    DebugPrint(("spawnLastLocation: destino %.2f %.2f %.2f (heading %.2f)."):format(
-        x, y, z, heading))
+    DebugPrint(("spawnLastLocation: destino %.2f %.2f %.2f (heading %.2f)."):format(x, y, z, heading))
 
     if not IsScreenFadedOut() then
         DoScreenFadeOut(500)
@@ -402,24 +468,52 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
     SetEntityVisible(ped, false, false)
     SetEntityCollision(ped, false, false)
 
-    -- Move directly to the destination: climbing hundreds of metres can exhaust
-    -- GTA's MapDataLoadedNode pool while streaming the whole surrounding world.
+    -- Soltamos la sala oculta antes de cargar el mundo real.
+    ReleaseHiddenRoom()
+    Wait(500)
+
+    -- Zonas pesadas: nunca aparecemos de golpe en ellas.
+    local zone = FindHeavyZone(x, y)
+    if zone then
+        if Config.SpawnPoints.HeavyZoneMode == "safe" and zone.safe then
+            -- Modo seguro: aparece en un punto ligero y el jugador camina el resto.
+            DebugPrint(("Zona pesada '%s': usando punto seguro."):format(tostring(zone.name)))
+            x, y, z = zone.safe.x, zone.safe.y, zone.safe.z
+            heading = tonumber(zone.safe.w) or heading
+        else
+            DebugPrint(("Zona pesada '%s': aproximación escalonada."):format(tostring(zone.name)))
+            StagedApproach(ped, zone, x, y, z)
+        end
+    end
+
+    -- Colocación final (+ interior si lo hay)
     SetEntityCoordsNoOffset(ped, x, y, z + 1.0, false, false, false, true)
     SetEntityHeading(ped, heading + 0.0)
-
     RequestCollisionAtCoord(x, y, z)
+
+    local interior = GetInteriorAtCoords(x, y, z)
+    if interior ~= 0 then
+        PinInteriorInMemory(interior)
+        local t0 = GetGameTimer()
+        while not IsInteriorReady(interior) and GetGameTimer() - t0 < 8000 do
+            Wait(100)
+        end
+    end
+
     local timeOut = 0
     while not HasCollisionLoadedAroundEntity(ped) and timeOut < 8000 do
+        RequestCollisionAtCoord(x, y, z)
         Wait(100)
         timeOut = timeOut + 100
     end
 
     if timeOut >= 8000 then
-        DebugPrint(("Colisiones no cargaron en 8 s para %.2f %.2f %.2f; se mantiene el spawn solicitado."):format(
-            x, y, z))
+        DebugPrint(("Colisiones no cargaron en 8 s para %.2f %.2f %.2f; se mantiene el spawn solicitado."):format(x, y,
+            z))
     end
 
     SetEntityCoordsNoOffset(ped, x, y, z, false, false, false, true)
+    SetEntityHeading(ped, heading + 0.0)
 
     -- 🛑 RESTAURAR PED
     SetEntityCollision(ped, true, true)
@@ -429,8 +523,7 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
     ClearPedTasksImmediately(ped)
 
     -- 🛑 APLICAR SALUD Y ARMADURA
-    local isFirstSpawn = isNewCharacterFlow or
-        (cData and cData.metadata and cData.metadata.introDone == false)
+    local isFirstSpawn = isNewCharacterFlow or (cData and cData.metadata and cData.metadata.introDone == false)
     if isFirstSpawn then
         local maxHealth = GetEntityMaxHealth(ped)
         SetEntityHealth(ped, maxHealth)
@@ -445,8 +538,15 @@ RegisterNetEvent('DP-MultiCharacter:client:spawnLastLocation', function(coords, 
     TriggerServerEvent('QBCore:Server:OnPlayerLoaded')
     TriggerEvent('QBCore:Client:OnPlayerLoaded')
 
-    Wait(500)
+    -- Dejamos que el streaming se asiente antes de enseñar el mundo.
+    Wait(1500)
     DoScreenFadeIn(1000)
+
+    -- Ya no hace falta mantener el interior fijado en memoria.
+    if interior ~= 0 then
+        Wait(3000)
+        UnpinInterior(interior)
+    end
 end)
 
 RegisterNetEvent('DP-MultiCharacter:client:loadSkinAndSpawn', function(model, skinData, cData)
